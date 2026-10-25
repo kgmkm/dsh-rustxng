@@ -125,7 +125,7 @@ volatile フィールドなので、カードからの変更が即座に効き�
 | プラットフォーム | 状態 |
 | :--- | :--- |
 | Windows 10/11 x64 | 検証済み: リリースバイナリ＋本プラグイン（検索・差し替え・設定カード）を DSH 0.2.1-rc.2 で確認 |
-| Linux x64（glibc / musl） | WSL2 Ubuntu 26.04 で検証済み: 両バイナリとも `scripts/verify-linux.sh` 12/12、プラグイン側テスト 15/15。単体 Ubuntu サーバでの実行が最終確認 |
+| Linux x64（glibc / musl） | 検証済み: 単体 Ubuntu 26.04 サーバ（DSH 0.2.0-rc.2 で差し替え・カード表示）、WSL2（両バイナリ 12/12） |
 | macOS arm64 / x64 | 設計上対応（リリース資産あり）。検証は未実施 |
 
 検証手順・バイナリの置き場所・OS 毎の注意（PATH、サービス登録、WSL、musl）は
@@ -136,26 +136,30 @@ volatile フィールドなので、カードからの変更が即座に効き�
 | 症状 | 対処 |
 | :--- | :--- |
 | `RustXNG is not answering at …` | インスタンスを起動するか、カードの接続先 URL を直す。`rustxng_status` に probe のエラーが出ます。 |
-| 差し替えたのに DeepSeek の 401 が出る | プロバイダが選ばれていません。カードの 1 つ目のスイッチ、または公式の *Web search* ページの `web.searchProvider` を確認。 |
-| Plugins にカードが出ない | プラグイン行が有効か（Plugin Manager）、DSH のバージョンが `dsh.compatibility` を満たすかを確認。 |
+| 差し替えたのに DeepSeek の 401 が出る | プロバイダが選ばれていません。カードの 1 つ目のスイッチ、または公式の *Web search* ページの `web.searchProvider` を確認。0.2.0-rc.2 ではプラグインからこの値を書けないため、profile patch か `DSH_WEB_SEARCH_PROVIDER=rustxng` を使ってください。 |
+| Plugins にカードが出ない | プラグイン行が有効か（Plugin Manager）、DSH のバージョンが `dsh.compatibility` を満たすかを確認。チェックアウト導入ではスキーマを Harness 側から解決します。`rustxng_status` の `Config schema:` 行が `loaded via …` か解決エラーかを示します（0.1.2 で `<prefix>/bin/dsh` のようなシンボリックリンクにも対応）。 |
+| `rustxng_status` が実設定と違って `Replace web_search: no (default)` と出る | 0.1.2 で修正済み（live 値の比較漏れ）。旧版でも動作自体は正しく、表示だけの問題です。 |
 | 結果が少ない | 一部エンジンは IP 単位でレート制限されます。`rustxng_status` や RustXNG の `/stats` で停止中のエンジンを確認。`!engine query` は依然使えます。 |
 
 ## 開発
 
 ```bash
-node tests/smoke.mjs                               # オフライン単体＋応答するインスタンスがあれば実検索
-RUSTXNG_BASE_URL=http://127.0.0.1:8899 node tests/smoke.mjs
+node tests/apply.test.mjs   # スタブのインスタンスに対してホスト側を検証（実機・ネットワーク不要）
+node tests/resolve.test.mjs # シンボリックリンク経由の launcher でもホスト依存を解決できるか（Linux 想定）
+node tests/smoke.mjs        # 応答の正規化＋OS 判定（+ 実インスタンスがあれば実検索）
 ```
 
 構成:
 
 ```
-index.js                ホスト側: Config、プロバイダ／ツールの配線、選択のハンドオーバ
+index.js                ホスト側: Config、プロバイダ／ツールの配線、選択のハンドオーバ、
+                        シンボリックリンク対応のホスト依存解決
 lib/rustxng-client.js   HTTP クライアント（クエリ生成・応答正規化・タイムアウト）
 lib/web-provider.js     `rustxng` プロバイダと web.searchProvider の受け渡し
 lib/tools.js            rustxng_search / rustxng_status
 lib/client.js           設定カード（Plugins → RustXNG）
 scripts/install-binary.mjs  SHA-256 検証付きのクロスプラットフォーム取得スクリプト
+scripts/verify-linux.sh     POSIX 向け 12 項目の検証スクリプト
 ```
 
 ## ライセンスと帰属

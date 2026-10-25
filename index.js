@@ -16,7 +16,8 @@
  * talks to a separately installed instance over HTTP; it does not embed RustXNG code.
  */
 import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
+import { realpathSync } from 'node:fs';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createRustxngClient, readLive } from './lib/rustxng-client.js';
 import { buildRustxngTools } from './lib/tools.js';
 import {
@@ -52,13 +53,63 @@ export const inject = ['tools'];
  * `@deepseek-ai/schemastery` normally resolves because the package is installed inside the
  * profile, next to every other plugin. A checkout that the Plugin Manager *links* (instead of
  * copying) is resolved by Node to its real path, which usually lives outside the profile, so
- * the bare specifier can fail there. The fallback resolves the same module through the
- * running Harness's own entry point 窶・the process that loaded this plugin 窶・so a linked
- * checkout still gets the schema (and therefore the volatile settings and the settings card).
+ * the bare specifier can fail there. The fallback resolves the same module from the running
+ * Harness installation, which is what a linked checkout needs.
  */
 export const schemaStatus = { loaded: false, via: '(not attempted)', error: undefined };
 
-/** Load the schema builder: profile-local first, then through the host process entry. */
+/**
+ * Bases to try when resolving a package the host provides.
+ *
+ * `process.argv[1]` is not enough on its own: a Linux npm-global install puts the launcher at
+ * `<prefix>/bin/dsh`, a symlink into `<prefix>/lib/node_modules/@deepseek-ai/dsh/lib/bin.js`,
+ * so resolving from the symlink looks for `<prefix>/bin/node_modules` — which does not exist.
+ * The real path of the entry point, and the plugin's own file, are tried as well.
+ *
+ * @param {string} [entry] Entry point to start from; defaults to `process.argv[1]`.
+ * @returns {string[]} Distinct absolute paths, most specific first.
+ */
+export function hostResolutionBases(entry = process.argv[1]) {
+  const bases = [];
+  if (typeof entry === 'string' && entry !== '') {
+    bases.push(entry);
+    try {
+      const real = realpathSync(entry);
+      if (real !== entry) bases.push(real);
+    } catch {
+      /* an entry point that cannot be resolved simply contributes no base */
+    }
+  }
+  try {
+    bases.push(fileURLToPath(import.meta.url));
+  } catch {
+    /* not a file: module (a bundler) — skip this base */
+  }
+  return [...new Set(bases)];
+}
+
+/**
+ * Import a host-provided package through the running Harness's own resolution.
+ *
+ * @param {string} specifier Bare specifier, e.g. `@deepseek-ai/schemastery`.
+ * @returns {Promise<{module: object, resolved: string, base: string}>} The imported module.
+ */
+export async function importFromHost(specifier) {
+  let lastError;
+  for (const base of hostResolutionBases()) {
+    try {
+      const hostRequire = createRequire(pathToFileURL(base));
+      const resolved = hostRequire.resolve(specifier);
+      const module = await import(pathToFileURL(resolved).href);
+      return { module, resolved, base };
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError ?? new Error(`no resolution base for ${specifier}`);
+}
+
+/** Load the schema builder: profile-local first, then through the host installation. */
 async function loadSchemaModule() {
   try {
     const module = await import('@deepseek-ai/schemastery');
@@ -69,11 +120,7 @@ async function loadSchemaModule() {
     schemaStatus.error = String(error?.code ?? error?.message ?? error);
   }
   try {
-    const entry = process.argv[1];
-    if (typeof entry !== 'string' || entry === '') throw new Error('no process entry point');
-    const hostRequire = createRequire(pathToFileURL(entry));
-    const resolved = hostRequire.resolve('@deepseek-ai/schemastery');
-    const module = await import(pathToFileURL(resolved).href);
+    const { module, resolved } = await importFromHost('@deepseek-ai/schemastery');
     const candidate = module.default ?? module;
     schemaStatus.loaded = true;
     schemaStatus.via = `host (${resolved})`;
@@ -168,11 +215,7 @@ async function loadToolsModule() {
     toolsStatus.error = String(error?.code ?? error?.message ?? error);
   }
   try {
-    const entry = process.argv[1];
-    if (typeof entry !== 'string' || entry === '') throw new Error('no process entry point');
-    const hostRequire = createRequire(pathToFileURL(entry));
-    const resolved = hostRequire.resolve('@deepseek-ai/dsh-tools');
-    const module = await import(pathToFileURL(resolved).href);
+    const { module, resolved } = await importFromHost('@deepseek-ai/dsh-tools');
     toolsStatus.loaded = true;
     toolsStatus.via = `host (${resolved})`;
     toolsStatus.error = undefined;

@@ -11,30 +11,36 @@ asset + code path exist, verification checklist below not yet executed.
 | :--- | :--- | :--- | :--- |
 | Release asset | `…-x86_64-pc-windows-msvc.exe` | `…-aarch64-apple-darwin`, `…-x86_64-apple-darwin` | `…-x86_64-unknown-linux-gnu`, `…-x86_64-unknown-linux-musl` |
 | `scripts/install-binary.mjs` | verified | supported | verified (glibc + musl) |
-| Plugin install (bundle patch) | verified | supported | verified (WSL2 Ubuntu 26.04) |
-| Provider replacement (`web_search`) | verified | supported | verified (WSL2 Ubuntu 26.04) |
-| Settings card | verified (registered & rendered in DSH 0.2.1-rc.2) | supported | supported (same client bundle) |
-| Tools (`rustxng_search` / `rustxng_status`) | verified | supported | verified (apply test 10/10) |
+| Plugin install (bundle patch) | verified | supported | verified (Ubuntu 26.04 server, WSL2) |
+| Provider replacement (`web_search`) | verified | supported | verified (Ubuntu 26.04 server, DSH 0.2.0-rc.2) |
+| Settings card | verified (registered & rendered in DSH 0.2.1-rc.2) | supported | verified (rendered on Ubuntu 26.04 server) |
+| Tools (`rustxng_search` / `rustxng_status`) | verified | supported | verified |
 
 ### Linux verification run
 
-WSL2 Ubuntu 26.04 LTS, x86_64, glibc 2.43, Node 24.22.1. Both release builds were installed
-by `scripts/install-binary.mjs` (checksums verified) and passed `scripts/verify-linux.sh`
-12/12:
+Ubuntu 26.04.1 LTS, x86_64, glibc 2.43, Node 24.22.0, **DSH 0.2.0-rc.2** (npm global install),
+RustXNG 0.4.0 running as a systemd user unit — reported from the server itself:
 
 | | glibc build | musl build |
 | :--- | :--- | :--- |
 | version / startup / healthz | PASS | PASS |
 | engines | 169 enabled / 169 | 169 enabled / 169 |
-| metasearch | 250 results, 31 unresponsive | 250 results, 31 unresponsive |
-| single engine | PASS (`!bing`, 10 results) | PASS (`!bing`, 10 results) |
+| metasearch | PASS (results + unresponsive list) | PASS |
+| single engine | PASS | PASS |
 | Japanese query round trip | PASS | PASS |
 | rss / csv / html / stats | PASS | PASS |
-| RSS memory | 43 MiB | 20 MiB |
 
-The plugin halves also ran against the Linux instance (`tests/smoke.mjs` 5/5,
-`tests/apply.test.mjs` 10/10). A standalone Ubuntu server is the final confirmation step —
-same commands, see "What verification means".
+The plugin was then installed from a linked checkout and answered `web_search` (the instance's
+`/stats` counter advanced). Two defects surfaced only in that environment; both are fixed in
+0.1.2:
+
+- **Symlinked launcher.** A Linux npm-global install puts a symlink at `<prefix>/bin/dsh`, so
+  resolving a host package from `process.argv[1]` looked in `<prefix>/bin/node_modules` and
+  failed. `hostResolutionBases()` now tries the launcher, its real path, and the plugin's own
+  file. Without it the schema is unreadable and **the settings card never appears**.
+- **Live config values in the status report.** Once the schema loads, every field arrives as an
+  object exposing `get()`; `lib/tools.js` compared those to primitives, so `rustxng_status`
+  printed `Replace web_search: no (default)` while the replacement was actually running.
 
 ## Windows
 
