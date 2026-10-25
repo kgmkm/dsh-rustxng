@@ -261,7 +261,13 @@ export function apply(ctx, config) {
       const ns = entry?.ns;
       return typeof ns === 'string' && (ns === 'web' || ns.endsWith(':web') || ns.split(':').pop() === 'web');
     });
-    if (row === undefined) return { known: false };
+    if (row === undefined) {
+      // The host hides the row; DSH itself still honours this environment variable for the
+      // same setting, so respect an explicit choice instead of guessing.
+      const env = process.env.DSH_WEB_SEARCH_PROVIDER;
+      if (typeof env === 'string' && env.length > 0) return { known: true, value: env };
+      return { known: false };
+    }
     const value = row.value?.searchProvider;
     return { known: true, value: typeof value === 'string' && value.length > 0 ? value : undefined };
   };

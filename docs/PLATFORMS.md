@@ -117,8 +117,8 @@ how the *selection* can be written.
 Because 0.2.0-rc.2 updates volatile config in place without remounting the plugin, the plugin
 computes availability per call (`enabled` + `selected` + `reachable`) instead of deciding at
 registration time — so flipping the card's switch takes effect on both releases without a
-restart. When the host hides the `web` row, an unreadable selection is treated as "serve",
-which is what makes the replacement work there at all.
+restart. When the host hides the `web` row, the plugin honours `DSH_WEB_SEARCH_PROVIDER` if it
+is set and otherwise serves, which is what makes the replacement work there at all.
 
 ## What "verification" means here
 
