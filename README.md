@@ -23,7 +23,8 @@ API and the ordinary `web.searchProvider` settings field, so it survives Harness
 
 ## Requirements
 
-- DeepSeek Harness `>= 0.2.1-rc.2 < 0.3.0` (host `tools`, `web` and `settings` services)
+- DeepSeek Harness `>= 0.2.0-rc.2 < 0.3.0` (host `tools`, `web` and `settings` services).
+  Verified on **0.2.0-rc.2** and **0.2.1-rc.2**; see [docs/PLATFORMS.md](docs/PLATFORMS.md#dsh-versions).
 - Node.js 20+ (the plugin uses the global `fetch`)
 - A running RustXNG instance — see below
 

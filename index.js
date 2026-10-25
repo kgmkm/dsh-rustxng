@@ -239,23 +239,31 @@ export function apply(ctx, config) {
 
   const selection = createSearchSelectionGuard({ getSettings: getSettingsService, log });
 
-  /** Current `web.searchProvider`, read through the settings document (sync, cheap). */
-  const currentSelection = () => {
+  /**
+   * Current `web.searchProvider`, as far as this host lets us see it.
+   *
+   * `known: false` means the host does not publish the row at all. DSH 0.2.0-rc.2 only lists
+   * settings entries that declare a volatile field, and its `web` row (`searchProvider`,
+   * `fetchProvider`) declares none — so the value is invisible there even though it is set.
+   * Callers distinguish "not selected" (known, empty) from "cannot tell" (unknown).
+   */
+  const selectionState = () => {
     const settings = getSettingsService();
-    if (settings === undefined || typeof settings.describe !== 'function') return undefined;
+    if (settings === undefined || typeof settings.describe !== 'function') return { known: false };
+    let rows;
     try {
-      const rows = settings.describe();
-      const row = Array.isArray(rows)
-        ? rows.find((entry) => {
-            const ns = entry?.ns;
-            return typeof ns === 'string' && (ns === 'web' || ns.endsWith(':web') || ns.split(':').pop() === 'web');
-          })
-        : undefined;
-      const value = row?.value?.searchProvider;
-      return typeof value === 'string' && value.length > 0 ? value : undefined;
+      rows = settings.describe();
     } catch {
-      return undefined;
+      return { known: false };
     }
+    if (!Array.isArray(rows)) return { known: false };
+    const row = rows.find((entry) => {
+      const ns = entry?.ns;
+      return typeof ns === 'string' && (ns === 'web' || ns.endsWith(':web') || ns.split(':').pop() === 'web');
+    });
+    if (row === undefined) return { known: false };
+    const value = row.value?.searchProvider;
+    return { known: true, value: typeof value === 'string' && value.length > 0 ? value : undefined };
   };
 
   let webFiber = null;
@@ -282,7 +290,7 @@ export function apply(ctx, config) {
         const provider = createRustxngSearchProvider({
           client,
           isEnabled: () => webConfig().enabled,
-          getSelection: currentSelection,
+          getSelection: selectionState,
           log: (message) => {
             try {
               inner.logger?.debug?.(message);
@@ -292,6 +300,7 @@ export function apply(ctx, config) {
           },
         });
         inner.web.registerSearchProvider(provider);
+        void debugTrace('register', { id: RUSTXNG_SEARCH_PROVIDER_ID, baseUrl: client.settings().baseUrl });
         inner.logger?.info?.(`[rustxng] registered the "${RUSTXNG_SEARCH_PROVIDER_ID}" web search provider`);
       });
     } catch (error) {
@@ -354,6 +363,7 @@ export function apply(ctx, config) {
     void debugTrace('sync', {
       search,
       hasSettings: getSettingsService() !== undefined,
+      selection: selectionState(),
       describeCount: (() => {
         try {
           return getSettingsService()?.describe?.()?.length;
@@ -362,6 +372,13 @@ export function apply(ctx, config) {
         }
       })(),
     });
+
+    // Register once and stay registered. `available()` is the only gate (enabled + selected +
+    // reachable), so flipping the switch takes effect even on hosts that never emit
+    // `loader/volatile-update` — DSH 0.2.0-rc.2 updates volatile config in place and keeps the
+    // plugin mounted, so a registration-time decision would leave the toggle dead until restart.
+    installWebSearch();
+
     if (search.enabled !== true) {
       // Also heals a value left behind by a previous session.
       afterLoad((retryNow) => {
@@ -378,12 +395,10 @@ export function apply(ctx, config) {
             /* release() reports through its own outcome */
           });
       });
-      uninstallWebSearch();
       webState = 'disabled (default)';
       return;
     }
 
-    installWebSearch();
     if (search.autoSelect !== true) {
       webState = `enabled (registered as "${RUSTXNG_SEARCH_PROVIDER_ID}"; autoSelect=false, so selecting it is up to you)`;
       return;
@@ -504,8 +519,9 @@ export function apply(ctx, config) {
     }
     installTools();
     syncWebSearch();
-    if (webConfig().enabled === true) startProbeLoop();
-    else stopProbeLoop();
+    // The probe loop runs whenever the plugin is active and only reports while the feature is
+    // on, so a host without `loader/volatile-update` still reflects reachability after a toggle.
+    startProbeLoop();
   };
 
   /**

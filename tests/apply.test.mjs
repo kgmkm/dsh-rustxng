@@ -21,7 +21,7 @@ const { apply } = await import('../index.js');
 const baseUrl = process.env.RUSTXNG_BASE_URL ?? 'http://127.0.0.1:8888';
 
 /** Minimal stand-in for a Cordis context: only the surfaces the plugin touches. */
-function createFakeHost({ selection = 'rustxng', updateThrows = true } = {}) {
+function createFakeHost({ selection = 'rustxng', updateThrows = true, hideWebRow = false } = {}) {
   const record = {
     providers: [],
     tools: [],
@@ -35,14 +35,16 @@ function createFakeHost({ selection = 'rustxng', updateThrows = true } = {}) {
 
   const settings = {
     describe() {
-      return [
-        {
+      const rows = [{ ns: 'include:other', value: {}, user: {} }];
+      // DSH 0.2.0-rc.2 publishes only entries with a volatile field, so its `web` row is absent.
+      if (!hideWebRow) {
+        rows.unshift({
           ns: 'include:web',
           value: { searchProvider: record.selection },
           user: record.selection === undefined ? {} : { searchProvider: record.selection },
-        },
-        { ns: 'include:other', value: {}, user: {} },
-      ];
+        });
+      }
+      return rows;
     },
     async update(ns, patch) {
       record.updates.push({ ns, patch });
@@ -192,12 +194,38 @@ await check('reports unavailable while the other provider is still selected', ()
 
 // --- 4. feature off ------------------------------------------------------
 const off = createFakeHost();
-apply(off.ctx, { ...config, webSearch: { enabled: false, autoSelect: true } });
+const offConfig = { ...config, webSearch: { enabled: false, autoSelect: true } };
+apply(off.ctx, offConfig);
 await tick(150);
 
-await check('registers no provider while the feature is off', () => {
-  assert.equal(off.record.providers.length, 0);
+await check('keeps the provider registered but unavailable while the feature is off', () => {
+  assert.equal(off.record.providers.length, 1, 'registration must not depend on the switch');
+  assert.equal(off.record.providers[0].available(), false, 'an off switch must never claim availability');
   assert.equal(off.record.tools.length, 2, 'tools stay available');
+});
+
+// DSH 0.2.0-rc.2 updates volatile config in place and does not emit `loader/volatile-update`,
+// so the switch must work without any re-registration.
+await check('reflects a switch flip without re-registering (0.2.0-rc.2 host)', () => {
+  offConfig.webSearch = { enabled: true, autoSelect: true };
+  assert.equal(off.record.providers[0].available(), true, 'enabling must take effect on the next check');
+  offConfig.webSearch = { enabled: false, autoSelect: true };
+  assert.equal(off.record.providers[0].available(), false, 'disabling must take effect on the next check');
+});
+
+// --- 5. DSH 0.2.0-rc.2: the host hides the `web` row from settings.describe() ---------
+const hidden = createFakeHost({ hideWebRow: true });
+apply(hidden.ctx, config);
+await tick(150);
+
+await check('serves when the host hides the selection (0.2.0-rc.2)', () => {
+  assert.equal(hidden.record.providers.length, 1);
+  assert.equal(hidden.record.providers[0].available(), true, 'an unreadable selection must not disable the provider');
+});
+
+await check('reports why the hand-over cannot be written on that host', async () => {
+  // The update attempt is deferred and retried; the guard's own reason is what matters.
+  assert.equal(hidden.record.updates.length, 0, 'no settings row to write');
 });
 
 // --- 4. live search through the provider (optional) ----------------------

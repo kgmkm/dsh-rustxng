@@ -22,7 +22,8 @@ DSH 本体には一切パッチを当てていません。公開 API の `ctx.we
 
 ## 必要なもの
 
-- DeepSeek Harness `>= 0.2.1-rc.2 < 0.3.0`（host の `tools` / `web` / `settings` を使用）
+- DeepSeek Harness `>= 0.2.0-rc.2 < 0.3.0`（host の `tools` / `web` / `settings` を使用）。
+  **0.2.0-rc.2** と **0.2.1-rc.2** で動作確認済み（[docs/PLATFORMS.md](docs/PLATFORMS.md#dsh-versions)）。
 - Node.js 20 以上（グローバルの `fetch` を使用）
 - 起動中の RustXNG
 

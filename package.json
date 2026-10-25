@@ -1,6 +1,6 @@
 {
   "name": "dsh-rustxng",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Replace the built-in web_search of DeepSeek Harness with a self-hosted RustXNG instance, and add a RustXNG search tool plus a settings card. Cross-platform (Windows / macOS / Linux).",
   "type": "module",
   "main": "index.js",
@@ -59,8 +59,9 @@
       "platform": "web"
     },
     "compatibility": {
-      "dsh": ">=0.2.1-rc.2 <0.3.0",
+      "dsh": ">=0.2.0-rc.2 <0.3.0",
       "dshReleases": {
+        "0.2.0-rc.2": "compatible",
         "0.2.1-rc.2": "compatible"
       },
       "node": ">=20",

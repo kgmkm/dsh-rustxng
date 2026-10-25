@@ -101,6 +101,25 @@ same commands, see "What verification means".
 - Containers: `docker run --rm -p 8888:8888 rustxng` (the upstream repository ships a
   Dockerfile) and point `baseUrl` at the published port.
 
+## DSH versions
+
+Both supported releases mount the plugin and register its provider; the difference is only in
+how the *selection* can be written.
+
+| | DSH 0.2.0-rc.2 | DSH 0.2.1-rc.2 |
+| :--- | :--- | :--- |
+| Bundle mount + provider registration | verified (`registerSearchProvider` called, no errors) | verified (end-to-end, `web_search` answered by RustXNG) |
+| Client half (settings card) served | verified (`dsh-rustxng/client.js` in the boot payload) | verified (slot occupant, card registered) |
+| `web.searchProvider` readable via `settings.describe()` | **no** — 0.2.0-rc.2 lists only entries that declare a volatile field, and its `web` row declares none | yes |
+| `loader/volatile-update` | not emitted | emitted |
+| Selection, recommended way | profile patch (`- id: web` → `searchProvider: rustxng`) or `DSH_WEB_SEARCH_PROVIDER=rustxng` | the settings card, the official Web search page, or the profile patch |
+
+Because 0.2.0-rc.2 updates volatile config in place without remounting the plugin, the plugin
+computes availability per call (`enabled` + `selected` + `reachable`) instead of deciding at
+registration time — so flipping the card's switch takes effect on both releases without a
+restart. When the host hides the `web` row, an unreadable selection is treated as "serve",
+which is what makes the replacement work there at all.
+
 ## What "verification" means here
 
 For a platform to move from *supported* to *verified*, run all of this on that OS:
