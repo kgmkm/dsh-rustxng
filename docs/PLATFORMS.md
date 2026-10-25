@@ -10,11 +10,31 @@ asset + code path exist, verification checklist below not yet executed.
 | | Windows | macOS (arm64 / x64) | Linux (glibc / musl) |
 | :--- | :--- | :--- | :--- |
 | Release asset | `…-x86_64-pc-windows-msvc.exe` | `…-aarch64-apple-darwin`, `…-x86_64-apple-darwin` | `…-x86_64-unknown-linux-gnu`, `…-x86_64-unknown-linux-musl` |
-| `scripts/install-binary.mjs` | verified | supported | supported |
-| Plugin install (bundle patch) | verified | supported | supported |
-| Provider replacement (`web_search`) | verified | supported | supported |
-| Settings card | verified (registered & rendered in DSH 0.2.1-rc.2) | supported | supported |
-| Tools (`rustxng_search` / `rustxng_status`) | verified | supported | supported |
+| `scripts/install-binary.mjs` | verified | supported | verified (glibc + musl) |
+| Plugin install (bundle patch) | verified | supported | verified (WSL2 Ubuntu 26.04) |
+| Provider replacement (`web_search`) | verified | supported | verified (WSL2 Ubuntu 26.04) |
+| Settings card | verified (registered & rendered in DSH 0.2.1-rc.2) | supported | supported (same client bundle) |
+| Tools (`rustxng_search` / `rustxng_status`) | verified | supported | verified (apply test 10/10) |
+
+### Linux verification run
+
+WSL2 Ubuntu 26.04 LTS, x86_64, glibc 2.43, Node 24.22.1. Both release builds were installed
+by `scripts/install-binary.mjs` (checksums verified) and passed `scripts/verify-linux.sh`
+12/12:
+
+| | glibc build | musl build |
+| :--- | :--- | :--- |
+| version / startup / healthz | PASS | PASS |
+| engines | 169 enabled / 169 | 169 enabled / 169 |
+| metasearch | 250 results, 31 unresponsive | 250 results, 31 unresponsive |
+| single engine | PASS (`!bing`, 10 results) | PASS (`!bing`, 10 results) |
+| Japanese query round trip | PASS | PASS |
+| rss / csv / html / stats | PASS | PASS |
+| RSS memory | 43 MiB | 20 MiB |
+
+The plugin halves also ran against the Linux instance (`tests/smoke.mjs` 5/5,
+`tests/apply.test.mjs` 10/10). A standalone Ubuntu server is the final confirmation step —
+same commands, see "What verification means".
 
 ## Windows
 
@@ -87,8 +107,10 @@ For a platform to move from *supported* to *verified*, run all of this on that O
 
 1. `node scripts/install-binary.mjs --dir ./bin` → checksum verified, binary runs
    (`./bin/rustxng -v` prints `RustXNG 0.4.0`).
-2. Start it: `./bin/rustxng --port 8888`; `curl http://127.0.0.1:8888/healthz` → `OK`.
-3. `node tests/smoke.mjs` → all checks pass, including the live search block.
+2. `bash scripts/verify-linux.sh --binary ./bin/rustxng --port 8888` → 12/12 checks pass
+   (or start the instance yourself and pass `--skip-start`).
+3. `node tests/smoke.mjs` and `node tests/apply.test.mjs` → all checks pass, including the
+   live search blocks.
 4. Install the plugin into a profile, open **Plugins → RustXNG**, switch the replacement on
    (or set `web.searchProvider: rustxng` in the profile patch).
 5. Ask the agent to run `web_search` → results come from many engines; stop RustXNG and

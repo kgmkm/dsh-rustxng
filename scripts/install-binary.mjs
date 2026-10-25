@@ -14,9 +14,9 @@
  * Exit codes: 0 success, 1 failure, 2 unsupported platform.
  */
 import { createHash } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
-import { homedir, tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join, resolve } from 'node:path';
 
 const REPO = 'sahenjp/RustXNG';
 
@@ -131,9 +131,24 @@ async function main() {
       console.warn('dsh-rustxng: no published checksum for this asset; continuing without verification');
     }
 
-    const temporary = join(tmpdir(), `rustxng-${process.pid}-${Date.now()}`);
+    // Stage next to the destination: /tmp is often a different filesystem (tmpfs), and a
+    // rename across devices fails with EXDEV.
+    const temporary = join(dir, `.rustxng-download-${process.pid}-${Date.now()}`);
     writeFileSync(temporary, body);
-    renameSync(temporary, destination);
+    try {
+      renameSync(temporary, destination);
+    } catch (error) {
+      if (error?.code !== 'EXDEV') {
+        try {
+          unlinkSync(temporary);
+        } catch {
+          /* best effort */
+        }
+        throw error;
+      }
+      copyFileSync(temporary, destination);
+      unlinkSync(temporary);
+    }
     if (process.platform !== 'win32') chmodSync(destination, 0o755);
     console.log(`dsh-rustxng: installed ${destination}`);
   }

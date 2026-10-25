@@ -17,7 +17,6 @@
  */
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
-import { defineTool } from '@deepseek-ai/dsh-tools';
 import { createRustxngClient, readLive } from './lib/rustxng-client.js';
 import { buildRustxngTools } from './lib/tools.js';
 import {
@@ -141,6 +140,55 @@ async function loadConfigSchema() {
   } catch {
     return undefined;
   }
+}
+
+/** Same resolution strategy for the tool builder (`@deepseek-ai/dsh-tools`). */
+export const toolsStatus = { loaded: false, via: '(not attempted)', error: undefined };
+
+async function loadToolsModule() {
+  const override = process.env.DSH_RUSTXNG_TOOLS_MODULE;
+  if (typeof override === 'string' && override !== '') {
+    try {
+      const specifier = override.startsWith('file:') ? override : pathToFileURL(override).href;
+      const module = await import(specifier);
+      toolsStatus.loaded = true;
+      toolsStatus.via = `override (${specifier})`;
+      return module.defineTool;
+    } catch (error) {
+      toolsStatus.error = `override: ${String(error?.message ?? error)}`;
+      return undefined;
+    }
+  }
+  try {
+    const module = await import('@deepseek-ai/dsh-tools');
+    toolsStatus.loaded = true;
+    toolsStatus.via = 'plugin-local';
+    return module.defineTool;
+  } catch (error) {
+    toolsStatus.error = String(error?.code ?? error?.message ?? error);
+  }
+  try {
+    const entry = process.argv[1];
+    if (typeof entry !== 'string' || entry === '') throw new Error('no process entry point');
+    const hostRequire = createRequire(pathToFileURL(entry));
+    const resolved = hostRequire.resolve('@deepseek-ai/dsh-tools');
+    const module = await import(pathToFileURL(resolved).href);
+    toolsStatus.loaded = true;
+    toolsStatus.via = `host (${resolved})`;
+    toolsStatus.error = undefined;
+    return module.defineTool;
+  } catch (error) {
+    toolsStatus.error = `${toolsStatus.error ?? ''} / host fallback: ${String(error?.message ?? error)}`;
+    return undefined;
+  }
+}
+
+let cachedDefineTool;
+/** Memoized `defineTool`, or `undefined` when this host has no tool registry package. */
+async function loadDefineTool() {
+  if (cachedDefineTool !== undefined) return cachedDefineTool;
+  cachedDefineTool = await loadToolsModule();
+  return cachedDefineTool;
 }
 
 export const Config = await loadConfigSchema();
@@ -369,33 +417,51 @@ export function apply(ctx, config) {
       toolsState = 'disabled because the setting exposeTools=false';
       return;
     }
-    try {
-      toolsFiber = ctx.plugin({
-        name: 'dsh-rustxng:tools',
-        apply(inner) {
-          const tools = buildRustxngTools({
-            defineTool,
-            client,
-            getConfig,
-            statusLines: () => [
-              `Provider: ${webState}`,
-              `Selection taken over: ${selection.pending() ?? '(none)'}`,
-              `Tools: ${toolsState}`,
-              `Config schema: ${
-                schemaStatus.loaded ? `loaded via ${schemaStatus.via}` : `unavailable (${schemaStatus.error ?? 'unknown'})`
-              }`,
-            ],
+    // `@deepseek-ai/dsh-tools` is loaded lazily so the plugin (and its tests) can be
+    // imported outside a Harness process — the web provider needs no host package.
+    void loadDefineTool()
+      .then((defineTool) => {
+        if (defineTool === undefined) {
+          toolsState = `unavailable (${toolsStatus.error ?? 'unknown'})`;
+          return;
+        }
+        if (toolsFiber !== null) return;
+        try {
+          toolsFiber = ctx.plugin({
+            name: 'dsh-rustxng:tools',
+            apply(inner) {
+              const tools = buildRustxngTools({
+                defineTool,
+                client,
+                getConfig,
+                statusLines: () => [
+                  `Provider: ${webState}`,
+                  `Selection taken over: ${selection.pending() ?? '(none)'}`,
+                  `Tools: ${toolsState}`,
+                  `Config schema: ${
+                    schemaStatus.loaded
+                      ? `loaded via ${schemaStatus.via}`
+                      : `unavailable (${schemaStatus.error ?? 'unknown'})`
+                  }`,
+                  `Tools module: ${toolsStatus.loaded ? `loaded via ${toolsStatus.via}` : `unavailable (${toolsStatus.error})`}`,
+                ],
+              });
+              for (const tool of tools) inner.tools.register(tool);
+              toolsState = `registered ${tools.map((tool) => tool.name).join(', ')}`;
+              inner.logger?.info?.(`[rustxng] ${toolsState}`);
+            },
           });
-          for (const tool of tools) inner.tools.register(tool);
-          toolsState = `registered ${tools.map((tool) => tool.name).join(', ')}`;
-          inner.logger?.info?.(`[rustxng] ${toolsState}`);
-        },
+        } catch (error) {
+          toolsFiber = null;
+          toolsState = `failed to register the tools: ${String(error)}`;
+          ctx.logger?.warn?.(`[rustxng] failed to register the tools: ${String(error)}`);
+        }
+      })
+      .catch((error) => {
+        toolsFiber = null;
+        toolsState = `failed to load the tools module: ${String(error)}`;
+        ctx.logger?.warn?.(`[rustxng] failed to load the tools module: ${String(error)}`);
       });
-    } catch (error) {
-      toolsFiber = null;
-      toolsState = `failed to register the tools: ${String(error)}`;
-      ctx.logger?.warn?.(`[rustxng] failed to register the tools: ${String(error)}`);
-    }
   };
 
   const uninstallTools = () => {

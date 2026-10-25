@@ -128,7 +128,7 @@ run it first when a search fails.
 | Platform | Status |
 | :--- | :--- |
 | Windows 10/11 x64 | Verified: release binary + this plugin (search, provider replacement, settings card) on DSH 0.2.1-rc.2 |
-| Linux x64 (glibc / musl) | Supported by design (release assets exist); verification pending |
+| Linux x64 (glibc / musl) | Verified on WSL2 Ubuntu 26.04: both release builds 12/12 in `scripts/verify-linux.sh`, plugin tests 15/15; standalone-server run is the final confirmation |
 | macOS arm64 / x64 | Supported by design (release assets exist); verification pending |
 
 See [docs/PLATFORMS.md](docs/PLATFORMS.md) for how each platform is expected to be
