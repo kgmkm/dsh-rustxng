@@ -1,0 +1,43 @@
+# dsh-rustxng — bundle patch layer
+#
+# `dsh plugin --profile <profile> add dsh-rustxng` (or the plugin_manager's
+# install_bundle) adds this row to the profile. The row id must match the
+# package name and the `name` exported by index.js.
+- insert:
+    - id: dsh-rustxng
+      name: 'dsh-rustxng'
+      config:
+        # Master switch. false unloads the tool and unregisters the provider.
+        enabled: true
+
+        # Where your RustXNG instance listens. Volatile: editable from the
+        # plugin's settings card without restarting DSH.
+        baseUrl: 'http://127.0.0.1:8888'
+
+        # Timeout for one search request (milliseconds).
+        timeoutMs: 20000
+
+        # Results handed to web_search by default (the caller's maxResults wins when smaller).
+        defaultLimit: 12
+
+        # Extra RustXNG query parameters. Empty string / -1 / [] = leave it to the server.
+        language: ''
+        timeRange: ''
+        safeSearch: -1
+        categories: []
+
+        # Register the `rustxng_search` / `rustxng_status` tools for the agent.
+        exposeTools: true
+
+        # Replace the built-in web_search with RustXNG.
+        #
+        #   enabled    … register a `rustxng` provider on ctx.web
+        #   autoSelect … also write web.searchProvider = 'rustxng' (the same
+        #                field the official "Web search" page writes)
+        #
+        # Both are volatile, so the settings card flips them live.
+        webSearch:
+          enabled: false
+          autoSelect: true
+
+        debug: false

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "RustXNG ウェブ検索",
+    "description": "内蔵の web_search を、自前の RustXNG（約 170 サイトを横断するセルフホスト型メタ検索エンジン）で答えます。API キー不要。"
+  }
+}

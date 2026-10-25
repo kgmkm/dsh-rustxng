@@ -1,0 +1,82 @@
+{
+  "name": "dsh-rustxng",
+  "version": "0.1.0",
+  "description": "Replace the built-in web_search of DeepSeek Harness with a self-hosted RustXNG instance, and add a RustXNG search tool plus a settings card. Cross-platform (Windows / macOS / Linux).",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "lib",
+    "locale",
+    "scripts",
+    "cordis.patch.yml",
+    "README.md",
+    "README.ja.md",
+    "LICENSE",
+    "icon.svg"
+  ],
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "rustxng",
+    "searxng",
+    "metasearch",
+    "web-search",
+    "search",
+    "privacy"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kgmkm/dsh-rustxng.git"
+  },
+  "homepage": "https://github.com/kgmkm/dsh-rustxng#readme",
+  "bugs": {
+    "url": "https://github.com/kgmkm/dsh-rustxng/issues"
+  },
+  "bin": {
+    "dsh-rustxng-fetch": "scripts/install-binary.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node tests/smoke.mjs",
+    "fetch-server": "node scripts/install-binary.mjs"
+  },
+  "dsh": {
+    "manifestVersion": 1,
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    },
+    "compatibility": {
+      "dsh": ">=0.2.1-rc.2 <0.3.0",
+      "dshReleases": {
+        "0.2.1-rc.2": "compatible"
+      },
+      "node": ">=20",
+      "profiles": [
+        "web"
+      ],
+      "platforms": [
+        "win32",
+        "darwin",
+        "linux"
+      ]
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*",
+    "@deepseek-ai/dsh-tools": ">=0.2.0-rc.2 <0.3.0"
+  },
+  "dependencies": {}
+}

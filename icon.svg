@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="RustXNG">
+  <defs>
+    <linearGradient id="rust" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f2762e"/>
+      <stop offset="0.55" stop-color="#c1440e"/>
+      <stop offset="1" stop-color="#7a2a08"/>
+    </linearGradient>
+    <linearGradient id="lens" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.30"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.04"/>
+    </linearGradient>
+  </defs>
+
+  <!-- lens -->
+  <circle cx="27" cy="27" r="17.5" fill="url(#lens)"/>
+  <circle cx="27" cy="27" r="17.5" fill="none" stroke="url(#rust)" stroke-width="5"/>
+
+  <!-- node graph inside the lens: a small metasearch fan-out -->
+  <g stroke="url(#rust)" stroke-width="2.2" stroke-linecap="round" fill="none" opacity="0.95">
+    <path d="M27 27 L18.5 18"/>
+    <path d="M27 27 L35.5 18.5"/>
+    <path d="M27 27 L18 35.5"/>
+    <path d="M27 27 L35 35"/>
+  </g>
+  <circle cx="27" cy="27" r="3.6" fill="url(#rust)"/>
+  <g fill="url(#rust)">
+    <circle cx="17.6" cy="17.1" r="2.1"/>
+    <circle cx="36.3" cy="17.9" r="2.1"/>
+    <circle cx="17.2" cy="36.3" r="2.1"/>
+    <circle cx="35.6" cy="35.6" r="2.1"/>
+  </g>
+
+  <!-- handle -->
+  <path d="M39.5 39.5 L52 52" stroke="url(#rust)" stroke-width="6.5" stroke-linecap="round" fill="none"/>
+</svg>

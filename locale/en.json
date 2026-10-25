@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "RustXNG web search",
+    "description": "Answer the built-in web_search with your own RustXNG instance: a self-hosted metasearch engine covering about 170 sites, with no API key."
+  }
+}
