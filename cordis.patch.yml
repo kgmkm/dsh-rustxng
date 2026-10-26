@@ -40,4 +40,10 @@
           enabled: false
           autoSelect: true
 
+        # Replace the built-in web_fetch with a charset-aware fetcher (BOM -> header -> meta).
+        # Useful for Japanese sites that declare Shift_JIS only in <meta> and send no charset.
+        webFetch:
+          enabled: false
+          autoSelect: true
+
         debug: false

@@ -14,6 +14,7 @@ and adds:
 | **Search provider** | A `rustxng` provider on the web seam. Point `web.searchProvider` at it and the built-in `web_search` is answered by your instance — no DeepSeek search API key involved. |
 | **Settings card** | A card in **Plugins** with two live switches and the instance URL. No restart, no hand-edited YAML. |
 | **Tools** | `rustxng_search` (engine, category, language and time-range scoped) and `rustxng_status` (reachability, version, engine count, provider state). |
+| **Fetch provider** (optional) | A charset-aware `web_fetch`: resolves BOM → HTTP header → `<meta charset>` before decoding, so Shift_JIS pages that declare their encoding only in `<meta>` stop coming back as `�`. Does not use RustXNG. |
 | **Binary fetcher** | `node scripts/install-binary.mjs` downloads and verifies the right release binary for your OS and CPU. |
 
 Nothing in DSH is patched: the plugin uses the documented `ctx.web.registerSearchProvider()`
@@ -110,7 +111,33 @@ feature off hands `web.searchProvider` back to whatever it was before.
 | `exposeTools` | `true` | Register `rustxng_search` / `rustxng_status`. |
 | `webSearch.enabled` | `false` | Replace the built-in `web_search`. Volatile. |
 | `webSearch.autoSelect` | `true` | Write `web.searchProvider = 'rustxng'` for you. Volatile. |
+| `webFetch.enabled` | `false` | Replace `web_fetch` with the charset-aware fetcher. Volatile. |
+| `webFetch.autoSelect` | `true` | Write `web.fetchProvider = 'rustxng-http'` for you. Volatile. |
 | `debug` | `false` | Log each provider decision. |
+
+## Optional: charset-aware fetch
+
+The built-in HTTP fetcher reads `charset` from the `Content-Type` header only. Many Japanese
+sites (JRA, municipal sites, older corporate sites) send `text/html` with the encoding
+declared *only* in `<meta charset="Shift_JIS">`, so the page arrives as replacement
+characters. Turning on `webFetch.enabled` registers a small provider that resolves
+**BOM → HTTP header → `<meta>`** and decodes with `TextDecoder` (Node ships the legacy
+encodings), with a size cap and the same html/text classification.
+
+```yaml
+- id: dsh-rustxng
+  config:
+    webFetch:
+      enabled: true
+      autoSelect: true
+- id: web
+  config:
+    searchProvider: rustxng
+    fetchProvider: rustxng-http   # replaces the whole row, so list both fields
+```
+
+It does not touch RustXNG: it is plain HTTP plus decoding. Leave it off if you prefer the
+built-in fetcher.
 
 ## Tools
 
@@ -146,6 +173,7 @@ musl).
 | `rustxng_status` says `Replace web_search: no (default)` although it is on | Fixed in 0.1.2 (live config values were compared as primitives). |
 | `Wanted to register a provider but web is missing` | The profile has no `@deepseek-ai/dsh-web`; this plugin needs it for the replacement (the tools still work). |
 | Results look thin | A few engines rate-limit per IP; `rustxng_status` / RustXNG's `/stats` show which are suspended. `!engine query` still works. |
+| A Japanese page comes back as `����` / `�N` | The site declares its encoding only in `<meta>`. Turn on `webFetch.enabled` (see [Optional: charset-aware fetch](#optional-charset-aware-fetch)), or read it with `curl … \| iconv -f SHIFT_JIS -t UTF-8`. |
 
 ## Development
 
@@ -164,6 +192,7 @@ index.js                 host plugin: Config, provider + tools wiring, selection
                          symlink-aware host-package resolution
 lib/rustxng-client.js    HTTP client: query building, payload normalisation, timeouts
 lib/web-provider.js      the `rustxng` seam provider and the web.searchProvider hand-over
+lib/fetch-provider.js    optional charset-aware fetch provider (BOM → header → <meta>)
 lib/tools.js             rustxng_search / rustxng_status
 lib/client.js            settings card (Plugins → RustXNG)
 scripts/install-binary.mjs  cross-platform release downloader with SHA-256 check

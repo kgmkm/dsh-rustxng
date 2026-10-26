@@ -20,6 +20,7 @@ import { realpathSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createRustxngClient, readLive } from './lib/rustxng-client.js';
 import { buildRustxngTools } from './lib/tools.js';
+import { RUSTXNG_FETCH_PROVIDER_ID, createCharsetFetchProvider } from './lib/fetch-provider.js';
 import {
   RUSTXNG_SEARCH_PROVIDER_ID,
   createRustxngSearchProvider,
@@ -181,6 +182,29 @@ async function loadConfigSchema() {
               'and choose it yourself (web.searchProvider, or DSH_WEB_SEARCH_PROVIDER=rustxng).',
           ),
       }),
+      /**
+       * Replace the built-in `web_fetch` with a charset-aware fetcher (default OFF).
+       *
+       * The built-in provider reads `charset` from the HTTP header only; Japanese sites that
+       * declare Shift_JIS in `<meta charset>` and send `text/html` without a parameter come
+       * back as replacement characters. This provider resolves BOM → header → `<meta>` and
+       * decodes with `TextDecoder`, exactly like a browser.
+       */
+      webFetch: z.object({
+        enabled: z
+          .boolean()
+          .default(false)
+          .volatile()
+          .description('Answer web_fetch with a charset-aware fetcher (BOM → header → <meta charset>).'),
+        autoSelect: z
+          .boolean()
+          .default(true)
+          .volatile()
+          .description(
+            'Point web.fetchProvider at "rustxng-http" automatically. Turn this off to register the provider ' +
+              'only and choose it yourself (web.fetchProvider, or DSH_WEB_FETCH_PROVIDER=rustxng-http).',
+          ),
+      }),
       /** Log each provider decision and request. */
       debug: z.boolean().default(false),
     });
@@ -281,16 +305,35 @@ export function apply(ctx, config) {
   };
 
   const selection = createSearchSelectionGuard({ getSettings: getSettingsService, log });
+  const fetchSelection = createSearchSelectionGuard({
+    getSettings: getSettingsService,
+    log,
+    providerId: RUSTXNG_FETCH_PROVIDER_ID,
+    field: 'fetchProvider',
+  });
+
+  /** Live values of the volatile `webFetch` settings. */
+  const fetchConfig = () => {
+    const fetchSettings = (getConfig() ?? {}).webFetch ?? {};
+    return {
+      enabled: readLive(fetchSettings.enabled, false) === true,
+      autoSelect: readLive(fetchSettings.autoSelect, true) !== false,
+    };
+  };
 
   /**
-   * Current `web.searchProvider`, as far as this host lets us see it.
+   * A `web` selection field, as far as this host lets us see it.
    *
    * `known: false` means the host does not publish the row at all. DSH 0.2.0-rc.2 only lists
    * settings entries that declare a volatile field, and its `web` row (`searchProvider`,
    * `fetchProvider`) declares none — so the value is invisible there even though it is set.
    * Callers distinguish "not selected" (known, empty) from "cannot tell" (unknown).
+   *
+   * @param {'searchProvider'|'fetchProvider'} field Selection field to read.
+   * @param {string} envName Environment variable the host honours for the same field.
+   * @returns {{known: boolean, value?: string}} The current selection.
    */
-  const selectionState = () => {
+  const readWebSelection = (field, envName) => {
     const settings = getSettingsService();
     if (settings === undefined || typeof settings.describe !== 'function') return { known: false };
     let rows;
@@ -307,17 +350,25 @@ export function apply(ctx, config) {
     if (row === undefined) {
       // The host hides the row; DSH itself still honours this environment variable for the
       // same setting, so respect an explicit choice instead of guessing.
-      const env = process.env.DSH_WEB_SEARCH_PROVIDER;
+      const env = process.env[envName];
       if (typeof env === 'string' && env.length > 0) return { known: true, value: env };
       return { known: false };
     }
-    const value = row.value?.searchProvider;
+    const value = row.value?.[field];
     return { known: true, value: typeof value === 'string' && value.length > 0 ? value : undefined };
   };
 
+  /** Current `web.searchProvider`. */
+  const selectionState = () => readWebSelection('searchProvider', 'DSH_WEB_SEARCH_PROVIDER');
+
+  /** Current `web.fetchProvider`. */
+  const fetchSelectionState = () => readWebSelection('fetchProvider', 'DSH_WEB_FETCH_PROVIDER');
+
   let webFiber = null;
   let toolsFiber = null;
+  let fetchFiber = null;
   let webState = 'disabled (default)';
+  let fetchState = 'disabled (default)';
   let toolsState = 'not registered';
   let probeTimer = null;
 
@@ -369,6 +420,98 @@ export function apply(ctx, config) {
   };
 
   /**
+   * Register the charset-aware fetch provider on `ctx.web`.
+   *
+   * Registered while the plugin is active and gated by `available()`, for the same reason as
+   * the search provider: hosts that update volatile config in place never re-mount the
+   * plugin, so a registration-time decision would freeze the switch.
+   */
+  const installWebFetch = () => {
+    if (fetchFiber !== null) return;
+    if (typeof ctx.inject !== 'function') {
+      fetchState = 'cannot register on this host (no ctx.inject)';
+      return;
+    }
+    try {
+      fetchFiber = ctx.inject(['web'], (inner) => {
+        const provider = createCharsetFetchProvider({
+          isEnabled: () => fetchConfig().enabled,
+          getSelection: fetchSelectionState,
+          log: (message) => {
+            try {
+              inner.logger?.debug?.(message);
+            } catch {
+              /* noop */
+            }
+          },
+        });
+        inner.web.registerFetchProvider(provider);
+        void debugTrace('register-fetch', { id: RUSTXNG_FETCH_PROVIDER_ID });
+        inner.logger?.info?.(`[rustxng] registered the "${RUSTXNG_FETCH_PROVIDER_ID}" web fetch provider`);
+      });
+    } catch (error) {
+      fetchFiber = null;
+      fetchState = `failed to register the fetch provider: ${String(error)}`;
+      ctx.logger?.warn?.(`[rustxng] failed to register the web fetch provider: ${String(error)}`);
+    }
+  };
+
+  const uninstallWebFetch = () => {
+    if (fetchFiber === null) return;
+    const current = fetchFiber;
+    fetchFiber = null;
+    Promise.resolve(current.dispose()).catch((error) => {
+      ctx.logger?.warn?.(`[rustxng] failed to unregister the web fetch provider: ${String(error)}`);
+    });
+  };
+
+  /** Keep the fetch provider registration and `web.fetchProvider` in line with the settings. */
+  const syncWebFetch = () => {
+    const settings = fetchConfig();
+    installWebFetch();
+
+    if (settings.enabled !== true) {
+      afterLoad((retryNow) => {
+        void fetchSelection
+          .release()
+          .then((outcome) => {
+            if (outcome?.released === true) return;
+            if (String(outcome?.reason ?? '').includes('HMR transactions cannot be nested')) retryNow();
+          })
+          .catch(() => {
+            /* release() reports through its own outcome */
+          });
+      }, 0, 'fetch');
+      fetchState = 'disabled (default)';
+      return;
+    }
+
+    if (settings.autoSelect !== true) {
+      fetchState = `enabled (registered as "${RUSTXNG_FETCH_PROVIDER_ID}"; autoSelect=false, so selecting it is up to you)`;
+      return;
+    }
+
+    fetchState = `enabled (registered as "${RUSTXNG_FETCH_PROVIDER_ID}" and selected in web.fetchProvider)`;
+    afterLoad((retryNow) => {
+      void fetchSelection
+        .take()
+        .then((outcome) => {
+          if (outcome?.applied === true) return;
+          const reason = String(outcome?.reason ?? 'unknown reason');
+          if (reason.includes('HMR transactions cannot be nested')) {
+            retryNow();
+            return;
+          }
+          fetchState = `enabled, but the selection was not written (${reason}).`;
+          ctx.logger?.warn?.(`[rustxng] the fetch selection was not written: ${reason}`);
+        })
+        .catch((error) => {
+          ctx.logger?.warn?.(`[rustxng] the fetch selection failed: ${String(error)}`);
+        });
+    }, 0, 'fetch');
+  };
+
+  /**
    * Bring the provider registration and the `web.searchProvider` hand-over in line with
    * the settings.
    *
@@ -383,18 +526,20 @@ export function apply(ctx, config) {
    * runs in a macrotask, and a bounded retry covers the rest of the mount, which can hold
    * the transaction open for longer than one tick.
    */
-  const afterLoad = (operation, attempt = 0) => {
+  const afterLoad = (operation, attempt = 0, kind = 'search') => {
     const delays = [0, 2000, 8000];
     const retry = () => {
       if (attempt + 1 >= delays.length) {
-        webState =
-          `enabled (registered as "${RUSTXNG_SEARCH_PROVIDER_ID}"), but this host refuses a plugin-initiated ` +
-          'settings write ("HMR transactions cannot be nested"). Set web.searchProvider to "rustxng" once on the ' +
-          'official Web search page — it is remembered and nothing else is needed.';
+        const advice =
+          'this host refuses a plugin-initiated settings write ("HMR transactions cannot be nested"). Set ' +
+          (kind === 'fetch' ? 'web.fetchProvider to "rustxng-http"' : 'web.searchProvider to "rustxng"') +
+          ' once by hand — it is remembered and nothing else is needed.';
+        if (kind === 'fetch') fetchState = `enabled (registered as "${RUSTXNG_FETCH_PROVIDER_ID}"), but ${advice}`;
+        else webState = `enabled (registered as "${RUSTXNG_SEARCH_PROVIDER_ID}"), but ${advice}`;
         ctx.logger?.warn?.('[rustxng] the host refuses plugin-initiated settings writes; select the provider once by hand');
         return;
       }
-      afterLoad(operation, attempt + 1);
+      afterLoad(operation, attempt + 1, kind);
     };
     const timer = setTimeout(() => {
       try {
@@ -500,7 +645,8 @@ export function apply(ctx, config) {
                 getConfig,
                 statusLines: () => [
                   `Provider: ${webState}`,
-                  `Selection taken over: ${selection.pending() ?? '(none)'}`,
+                  `Fetch provider: ${fetchState}`,
+                  `Selection taken over: ${selection.pending() ?? '(none)'} / ${fetchSelection.pending() ?? '(none)'}`,
                   `Tools: ${toolsState}`,
                   `Config schema: ${
                     schemaStatus.loaded
@@ -562,12 +708,15 @@ export function apply(ctx, config) {
     if (getConfig().enabled === false) {
       uninstallTools();
       uninstallWebSearch();
+      uninstallWebFetch();
       stopProbeLoop();
       webState = 'disabled (master switch enabled=false)';
+      fetchState = 'disabled (master switch enabled=false)';
       return;
     }
     installTools();
     syncWebSearch();
+    syncWebFetch();
     // The probe loop runs whenever the plugin is active and only reports while the feature is
     // on, so a host without `loader/volatile-update` still reflects reachability after a toggle.
     startProbeLoop();
@@ -595,6 +744,7 @@ export function apply(ctx, config) {
       ctx.inject(['settings'], () => {
         try {
           syncWebSearch();
+          syncWebFetch();
         } catch (error) {
           ctx.logger?.warn?.(`[rustxng] failed to finish the web search hand-over: ${String(error)}`);
         }
@@ -610,6 +760,7 @@ export function apply(ctx, config) {
     stopProbeLoop();
     uninstallTools();
     uninstallWebSearch();
+    uninstallWebFetch();
   });
 }
 

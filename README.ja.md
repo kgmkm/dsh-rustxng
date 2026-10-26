@@ -13,6 +13,7 @@ fan-out し、重複を除いて結果を返します。広告も追跡もあり
 | **検索プロバイダ** | web シームに `rustxng` プロバイダを登録。`web.searchProvider` をそこへ向けると、内蔵 `web_search` が RustXNG 経由になります（DeepSeek の検索 API キー不要）。 |
 | **設定カード** | **Plugins** に「RustXNG」カード。スイッチ 2 つと接続先 URL を、再起動なしで変更できます。YAML を手で書く必要はありません。 |
 | **ツール** | `rustxng_search`（エンジン・カテゴリ・言語・期間を指定可能）と `rustxng_status`（到達性・バージョン・エンジン数・プロバイダ状態）。 |
+| **ページ取得**（任意） | 文字コード対応の `web_fetch`。BOM → HTTP ヘッダ → `<meta charset>` の順に判定して復号するので、`<meta>` でしか Shift_JIS を宣言していない日本語サイトが `�` にならなくなります。RustXNG は使いません。 |
 | **バイナリ取得** | `node scripts/install-binary.mjs` が OS / CPU に合うリリースを SHA-256 検証付きで取得します。 |
 
 DSH 本体には一切パッチを当てていません。公開 API の `ctx.web.registerSearchProvider()` と、
@@ -107,7 +108,31 @@ volatile フィールドなので、カードからの変更が即座に効き�
 | `exposeTools` | `true` | `rustxng_search` / `rustxng_status` を登録。 |
 | `webSearch.enabled` | `false` | 内蔵 `web_search` を差し替える。volatile。 |
 | `webSearch.autoSelect` | `true` | `web.searchProvider = 'rustxng'` を自動で書く。volatile。 |
+| `webFetch.enabled` | `false` | `web_fetch` を文字コード対応の取得層に差し替える。volatile。 |
+| `webFetch.autoSelect` | `true` | `web.fetchProvider = 'rustxng-http'` を自動で書く。volatile。 |
 | `debug` | `false` | プロバイダの判断をログに出す。 |
+
+## 任意: 文字コード対応のページ取得
+
+内蔵の取得層は `Content-Type` ヘッダの `charset` しか見ません。JRA・自治体・古い企業サイトなどは
+`text/html` に charset を付けず、HTML の `<meta charset="Shift_JIS">` でしか宣言しないため、
+取得結果が置換文字（`�`）になります。`webFetch.enabled` をオンにすると、
+**BOM → HTTP ヘッダ → `<meta>`** の順に判定して `TextDecoder` で復号するプロバイダを登録します
+（サイズ上限と html/text の判定は内蔵版と同じ）。
+
+```yaml
+- id: dsh-rustxng
+  config:
+    webFetch:
+      enabled: true
+      autoSelect: true
+- id: web
+  config:
+    searchProvider: rustxng
+    fetchProvider: rustxng-http   # 行ごと置換されるので両方書く
+```
+
+RustXNG は使いません（素の HTTP 取得＋復号のみ）。不要ならオフのままで構いません。
 
 ## ツール
 
@@ -139,6 +164,7 @@ volatile フィールドなので、カードからの変更が即座に効き�
 | 差し替えたのに DeepSeek の 401 が出る | プロバイダが選ばれていません。カードの 1 つ目のスイッチ、または公式の *Web search* ページの `web.searchProvider` を確認。0.2.0-rc.2 ではプラグインからこの値を書けないため、profile patch か `DSH_WEB_SEARCH_PROVIDER=rustxng` を使ってください。 |
 | Plugins にカードが出ない | プラグイン行が有効か（Plugin Manager）、DSH のバージョンが `dsh.compatibility` を満たすかを確認。チェックアウト導入ではスキーマを Harness 側から解決します。`rustxng_status` の `Config schema:` 行が `loaded via …` か解決エラーかを示します（0.1.2 で `<prefix>/bin/dsh` のようなシンボリックリンクにも対応）。 |
 | `rustxng_status` が実設定と違って `Replace web_search: no (default)` と出る | 0.1.2 で修正済み（live 値の比較漏れ）。旧版でも動作自体は正しく、表示だけの問題です。 |
+| 日本語ページが `����` や `�N` になる | 取得先が `<meta>` でしか文字コードを宣言していません。`webFetch.enabled` をオンにするか（[任意: 文字コード対応のページ取得](#任意-文字コード対応のページ取得)）、`curl … \| iconv -f SHIFT_JIS -t UTF-8` で読んでください。 |
 | 結果が少ない | 一部エンジンは IP 単位でレート制限されます。`rustxng_status` や RustXNG の `/stats` で停止中のエンジンを確認。`!engine query` は依然使えます。 |
 
 ## 開発
@@ -156,6 +182,7 @@ index.js                ホスト側: Config、プロバイダ／ツールの配
                         シンボリックリンク対応のホスト依存解決
 lib/rustxng-client.js   HTTP クライアント（クエリ生成・応答正規化・タイムアウト）
 lib/web-provider.js     `rustxng` プロバイダと web.searchProvider の受け渡し
+lib/fetch-provider.js   任意の文字コード対応 fetch プロバイダ（BOM → ヘッダ → <meta>）
 lib/tools.js            rustxng_search / rustxng_status
 lib/client.js           設定カード（Plugins → RustXNG）
 scripts/install-binary.mjs  SHA-256 検証付きのクロスプラットフォーム取得スクリプト

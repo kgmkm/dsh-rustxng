@@ -62,6 +62,21 @@ async function startStubServer() {
       );
       return;
     }
+    if (url.pathname === '/sjis.html') {
+      // Shift_JIS declared only in <meta>, exactly like the JRA pages that garbled the built-in
+      // fetcher: the header carries no charset parameter.
+      const head = Buffer.from('<html><head><meta charset="Shift_JIS"><title>test</title></head><body>', 'latin1');
+      const body = Buffer.from('82a082a282a4', 'hex'); // あいう
+      const tail = Buffer.from('</body></html>', 'latin1');
+      response.writeHead(200, { 'content-type': 'text/html' });
+      response.end(Buffer.concat([head, body, tail]));
+      return;
+    }
+    if (url.pathname === '/binary') {
+      response.writeHead(200, { 'content-type': 'image/png' });
+      response.end(Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+      return;
+    }
     response.writeHead(404);
     response.end();
   });
@@ -77,6 +92,7 @@ const liveBaseUrl = process.env.RUSTXNG_BASE_URL;
 function createFakeHost({ selection = 'rustxng', updateThrows = true, hideWebRow = false } = {}) {
   const record = {
     providers: [],
+    fetchProviders: [],
     tools: [],
     warnings: [],
     updates: [],
@@ -120,6 +136,12 @@ function createFakeHost({ selection = 'rustxng', updateThrows = true, hideWebRow
       record.providers.push(provider);
       return () => {
         record.providers = record.providers.filter((entry) => entry !== provider);
+      };
+    },
+    registerFetchProvider(provider) {
+      record.fetchProviders.push(provider);
+      return () => {
+        record.fetchProviders = record.fetchProviders.filter((entry) => entry !== provider);
       };
     },
   };
@@ -324,7 +346,37 @@ await check('status reports configured values even when they arrive as live wrap
   assert.doesNotMatch(statusText, /no \(default\)/, statusText);
 });
 
-// --- 8. optional: a real RustXNG instance --------------------------------
+// --- 8. charset-aware fetch provider --------------------------------------
+const fetchHost = createFakeHost({ selection: 'rustxng' });
+apply(fetchHost.ctx, { ...config, webFetch: { enabled: true, autoSelect: false } });
+await tick(150);
+
+await check('registers the charset-aware fetch provider', () => {
+  assert.equal(fetchHost.record.fetchProviders.length, 1);
+  assert.equal(fetchHost.record.fetchProviders[0].id, 'rustxng-http');
+});
+
+const fetchProvider = fetchHost.record.fetchProviders[0];
+const sjis = await fetchProvider.fetch({ url: `${stub.baseUrl}/sjis.html` });
+
+await check('decodes a Shift_JIS page that declares its charset only in <meta>', () => {
+  assert.equal(sjis.statusCode, 200);
+  assert.match(sjis.body.content, /あいう/, sjis.body.content);
+  assert.doesNotMatch(sjis.body.content, /\uFFFD/, 'no replacement characters');
+  assert.equal(sjis.body.kind, 'html');
+});
+
+const binary = await fetchProvider.fetch({ url: `${stub.baseUrl}/binary` }).then(
+  (result) => ({ ok: true, result }),
+  (error) => ({ ok: false, error }),
+);
+
+await check('refuses a content type it cannot decode', () => {
+  assert.equal(binary.ok, false);
+  assert.match(String(binary.error?.message ?? ''), /unsupported content type/);
+});
+
+// --- 9. optional: a real RustXNG instance --------------------------------
 if (typeof liveBaseUrl === 'string' && liveBaseUrl !== '') {
   const liveHost = createFakeHost({ selection: 'rustxng' });
   apply(liveHost.ctx, { ...config, baseUrl: liveBaseUrl });
