@@ -16,11 +16,14 @@
  * talks to a separately installed instance over HTTP; it does not embed RustXNG code.
  */
 import { createRequire } from 'node:module';
-import { realpathSync } from 'node:fs';
+import { realpathSync, mkdirSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createRustxngClient, readLive } from './lib/rustxng-client.js';
 import { buildRustxngTools } from './lib/tools.js';
 import { RUSTXNG_FETCH_PROVIDER_ID, createCharsetFetchProvider } from './lib/fetch-provider.js';
+import { createProcessManager } from './lib/process-manager.js';
 import {
   RUSTXNG_SEARCH_PROVIDER_ID,
   createRustxngSearchProvider,
@@ -207,6 +210,29 @@ async function loadConfigSchema() {
       }),
       /** Log each provider decision and request. */
       debug: z.boolean().default(false),
+      /**
+       * Start the RustXNG binary for the user (default OFF) and stop it again when it is idle.
+       *
+       * Ownership matters: only the process this plugin started is ever stopped, and the idle
+       * timeout is what cleans up after a Harness that was killed without running its cleanup.
+       * `idleMinutes: 0` keeps it running until the plugin unloads.
+       */
+      autoStart: z.object({
+        enabled: z
+          .boolean()
+          .default(false)
+          .volatile()
+          .description('Start the RustXNG binary automatically when the instance does not answer.'),
+        binaryPath: z
+          .string()
+          .default('')
+          .description('Absolute path to the rustxng binary. Empty searches $DSH_HOME/bin, ~/.local/bin and PATH.'),
+        idleMinutes: z
+          .number()
+          .default(60)
+          .volatile()
+          .description('Stop the started instance after this many minutes without a search (0 = never).'),
+      }),
     });
   } catch {
     return undefined;
@@ -263,6 +289,9 @@ export const Config = await loadConfigSchema();
 /** How often the reachability probe runs while the replacement is enabled. */
 const PROBE_INTERVAL_MS = 30000;
 
+/** How often the idle watchdog checks the process this plugin started. */
+const IDLE_CHECK_INTERVAL_MS = 30000;
+
 export function apply(ctx, config) {
   const getConfig = () => {
     const value = typeof config?.get === 'function' ? config.get() : config;
@@ -276,7 +305,53 @@ export function apply(ctx, config) {
     }
   };
 
-  const client = createRustxngClient({ getConfig, log });
+  /**
+   * Where the started instance writes its log. `$DSH_HOME/logs` keeps it next to the other
+   * Harness logs, which also means it is easy to point a user at.
+   */
+  const stateDir = (() => {
+    const home = typeof process.env.DSH_HOME === 'string' && process.env.DSH_HOME !== ''
+      ? process.env.DSH_HOME
+      : join(homedir(), '.dsh');
+    const dir = join(home, 'logs');
+    try {
+      mkdirSync(dir, { recursive: true });
+    } catch {
+      /* the spawner reports an unwritable path when it matters */
+    }
+    return dir;
+  })();
+
+  /** Health check used by the supervisor (deliberately independent of the search client). */
+  const probeHealth = async (baseUrl) => {
+    try {
+      const response = await fetch(`${baseUrl}/healthz`, { signal: AbortSignal.timeout?.(2500) });
+      return response.ok;
+    } catch {
+      return false;
+    }
+  };
+
+  const processManager = createProcessManager({ getConfig, log, probeHealth, stateDir });
+  const client = createRustxngClient({ getConfig, log, onActivity: () => processManager.touch() });
+
+  /** Where the started instance should listen, derived from `baseUrl`. */
+  const startTarget = () => {
+    const { baseUrl } = client.settings();
+    try {
+      const url = new URL(baseUrl);
+      const port = Number(url.port || (url.protocol === 'https:' ? 443 : 80));
+      return { baseUrl, port, bindAddress: url.hostname === 'localhost' ? '127.0.0.1' : url.hostname };
+    } catch {
+      return { baseUrl, port: 8888, bindAddress: '127.0.0.1' };
+    }
+  };
+
+  /** Start the instance on demand (used by the provider before a search). */
+  const ensureInstance = async () => {
+    if (processManager.config().enabled !== true) return { started: false, reason: 'auto-start is off' };
+    return processManager.ensureStarted(startTarget());
+  };
 
   /** Live values of the volatile `webSearch` settings. */
   const webConfig = () => {
@@ -371,6 +446,7 @@ export function apply(ctx, config) {
   let fetchState = 'disabled (default)';
   let toolsState = 'not registered';
   let probeTimer = null;
+  let idleTimer = null;
 
   /**
    * Register the provider on `ctx.web`.
@@ -391,6 +467,8 @@ export function apply(ctx, config) {
           client,
           isEnabled: () => webConfig().enabled,
           getSelection: selectionState,
+          ensureStarted: ensureInstance,
+          canStart: () => processManager.config().enabled === true,
           log: (message) => {
             try {
               inner.logger?.debug?.(message);
@@ -647,6 +725,16 @@ export function apply(ctx, config) {
                   `Provider: ${webState}`,
                   `Fetch provider: ${fetchState}`,
                   `Selection taken over: ${selection.pending() ?? '(none)'} / ${fetchSelection.pending() ?? '(none)'}`,
+                  (() => {
+                    const info = processManager.status();
+                    const managed = info.managed ? `managed (pid ${info.pid})` : 'not managed by this plugin';
+                    const idle = info.idleMs === undefined ? 'no activity yet' : `${Math.round(info.idleMs / 60000)} min idle`;
+                    return (
+                      `Auto-start: ${info.autoStart ? 'on' : 'off'} — ${managed}, ` +
+                      `idle timeout ${info.idleMinutes === 0 ? 'off' : `${info.idleMinutes} min`} (${idle})` +
+                      (info.lastError === undefined ? '' : `, last error: ${info.lastError}`)
+                    );
+                  })(),
                   `Tools: ${toolsState}`,
                   `Config schema: ${
                     schemaStatus.loaded
@@ -704,6 +792,30 @@ export function apply(ctx, config) {
     probeTimer = null;
   };
 
+  /**
+   * Stop the instance this plugin started once it has been idle for `autoStart.idleMinutes`.
+   *
+   * This is the only cleanup that survives a Harness killed without running its effects, which
+   * is the whole point of the timeout. It never touches a process the plugin did not start.
+   */
+  const startIdleWatchdog = () => {
+    if (idleTimer !== null) return;
+    idleTimer = setInterval(() => {
+      try {
+        if (processManager.tick()) log('[rustxng] stopped the instance after the idle timeout');
+      } catch (error) {
+        ctx.logger?.warn?.(`[rustxng] idle watchdog failed: ${String(error)}`);
+      }
+    }, IDLE_CHECK_INTERVAL_MS);
+    idleTimer.unref?.();
+  };
+
+  const stopIdleWatchdog = () => {
+    if (idleTimer === null) return;
+    clearInterval(idleTimer);
+    idleTimer = null;
+  };
+
   const sync = () => {
     if (getConfig().enabled === false) {
       uninstallTools();
@@ -720,6 +832,15 @@ export function apply(ctx, config) {
     // The probe loop runs whenever the plugin is active and only reports while the feature is
     // on, so a host without `loader/volatile-update` still reflects reachability after a toggle.
     startProbeLoop();
+    startIdleWatchdog();
+    if (webConfig().enabled === true && processManager.config().enabled === true) {
+      void ensureInstance().then((outcome) => {
+        if (outcome?.started === true) log(`[rustxng] started the instance (pid ${outcome.pid})`);
+        else if (outcome?.reason !== undefined && outcome.reason !== 'the instance already answers') {
+          log(`[rustxng] auto-start: ${outcome.reason}`);
+        }
+      });
+    }
   };
 
   /**
@@ -758,9 +879,13 @@ export function apply(ctx, config) {
 
   ctx.effect(() => () => {
     stopProbeLoop();
+    stopIdleWatchdog();
     uninstallTools();
     uninstallWebSearch();
     uninstallWebFetch();
+    // Graceful Harness shutdown: stop the instance we started. A killed Harness never runs
+    // this, which is why `autoStart.idleMinutes` exists.
+    processManager.stop('plugin unloaded');
   });
 }
 

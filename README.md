@@ -15,6 +15,7 @@ and adds:
 | **Settings card** | A card in **Plugins** with two live switches and the instance URL. No restart, no hand-edited YAML. |
 | **Tools** | `rustxng_search` (engine, category, language and time-range scoped) and `rustxng_status` (reachability, version, engine count, provider state). |
 | **Fetch provider** (optional) | A charset-aware `web_fetch`: resolves BOM → HTTP header → `<meta charset>` before decoding, so Shift_JIS pages that declare their encoding only in `<meta>` stop coming back as `�`. Does not use RustXNG. |
+| **Process supervision** (optional) | Start the binary when the instance does not answer, and stop it again after an idle timeout (default 60 min, editable in the card). Only a process this plugin started is stopped — this is also the only thing that cleans up after a Harness that was killed. |
 | **Binary fetcher** | `node scripts/install-binary.mjs` downloads and verifies the right release binary for your OS and CPU. |
 
 Nothing in DSH is patched: the plugin uses the documented `ctx.web.registerSearchProvider()`
@@ -113,6 +114,9 @@ feature off hands `web.searchProvider` back to whatever it was before.
 | `webSearch.autoSelect` | `true` | Write `web.searchProvider = 'rustxng'` for you. Volatile. |
 | `webFetch.enabled` | `false` | Replace `web_fetch` with the charset-aware fetcher. Volatile. |
 | `webFetch.autoSelect` | `true` | Write `web.fetchProvider = 'rustxng-http'` for you. Volatile. |
+| `autoStart.enabled` | `false` | Start the binary when the instance does not answer. Volatile. |
+| `autoStart.binaryPath` | `''` | Explicit binary path; empty searches `$DSH_HOME/bin`, `~/.local/bin` and `PATH`. |
+| `autoStart.idleMinutes` | `60` | Stop the started process after this many minutes without a search (`0` = never). Volatile. |
 | `debug` | `false` | Log each provider decision. |
 
 ## Optional: charset-aware fetch
@@ -138,6 +142,34 @@ encodings), with a size cap and the same html/text classification.
 
 It does not touch RustXNG: it is plain HTTP plus decoding. Leave it off if you prefer the
 built-in fetcher.
+
+## Optional: start and stop the instance
+
+If you would rather not run RustXNG as a service, let the plugin own the process:
+
+```yaml
+- id: dsh-rustxng
+  config:
+    autoStart:
+      enabled: true
+      binaryPath: /home/you/.dsh/bin/rustxng   # empty = $DSH_HOME/bin, ~/.local/bin, PATH
+      idleMinutes: 60                          # 0 = keep it until DSH unloads the plugin
+```
+
+Behaviour:
+
+- It starts the binary only when the instance does not already answer, and waits for
+  `/healthz` before using it. Concurrent callers share one attempt, so two starts cannot race
+  for the port.
+- It **stops only a process it started** — a systemd unit or a manually started instance is
+  never touched.
+- On plugin unload (a normal DSH shutdown) it stops the process immediately.
+- A Harness that is killed never runs that cleanup, so the **idle timeout** finishes the job:
+  after `idleMinutes` without a search the process is stopped, and the next search starts it
+  again. Reachability probes do not count as activity.
+- `rustxng_status` reports `Auto-start: on — managed (pid …), idle timeout 60 min (12 min idle)`.
+
+Set `idleMinutes: 0` when using a service manager instead; the two mechanisms are independent.
 
 ## Tools
 

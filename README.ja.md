@@ -110,6 +110,9 @@ volatile フィールドなので、カードからの変更が即座に効き�
 | `webSearch.autoSelect` | `true` | `web.searchProvider = 'rustxng'` を自動で書く。volatile。 |
 | `webFetch.enabled` | `false` | `web_fetch` を文字コード対応の取得層に差し替える。volatile。 |
 | `webFetch.autoSelect` | `true` | `web.fetchProvider = 'rustxng-http'` を自動で書く。volatile。 |
+| `autoStart.enabled` | `false` | インスタンスが応答しないときバイナリを起動する。volatile。 |
+| `autoStart.binaryPath` | `''` | バイナリの明示パス。空なら `$DSH_HOME/bin` → `~/.local/bin` → `PATH`。 |
+| `autoStart.idleMinutes` | `60` | 検索が無いままこの分数が過ぎたら、起動したプロセスを停止（`0` で停止しない）。volatile。 |
 | `debug` | `false` | プロバイダの判断をログに出す。 |
 
 ## 任意: 文字コード対応のページ取得
@@ -133,6 +136,32 @@ volatile フィールドなので、カードからの変更が即座に効き�
 ```
 
 RustXNG は使いません（素の HTTP 取得＋復号のみ）。不要ならオフのままで構いません。
+
+## 任意: プロセスの自動起動と自動終了
+
+RustXNG をサービスとして常駐させたくない場合は、プラグインにプロセスを持たせられます。
+
+```yaml
+- id: dsh-rustxng
+  config:
+    autoStart:
+      enabled: true
+      binaryPath: /home/you/.dsh/bin/rustxng   # 空なら $DSH_HOME/bin, ~/.local/bin, PATH
+      idleMinutes: 60                          # 0 = DSH がプラグインを解放するまで動かす
+```
+
+挙動:
+
+- インスタンスが応答しないときだけ起動し、`/healthz` が返るまで待ってから使います。
+  同時に複数から呼ばれても起動は 1 回だけ（ポート競合を防ぐ）。
+- **このプラグインが起動したプロセスだけ**を停止します。systemd や手動起動のものは触りません。
+- プラグインの解放時（DSH の正常終了）は即座に停止します。
+- DSH が強制終了された場合はそのクリーンアップが走らないため、**アイドルタイマー**が
+  後始末をします。検索が無いまま `idleMinutes` 経過で停止し、次の検索で自動的に再起動します。
+  到達性の定期チェックは「使用」に数えません。
+- `rustxng_status` に `Auto-start: on — managed (pid …), idle timeout 60 min (12 min idle)` と出ます。
+
+サービス管理と併用する場合は `idleMinutes: 0` にしてください（両者は独立です）。
 
 ## ツール
 
@@ -165,6 +194,7 @@ RustXNG は使いません（素の HTTP 取得＋復号のみ）。不要なら
 | Plugins にカードが出ない | プラグイン行が有効か（Plugin Manager）、DSH のバージョンが `dsh.compatibility` を満たすかを確認。チェックアウト導入ではスキーマを Harness 側から解決します。`rustxng_status` の `Config schema:` 行が `loaded via …` か解決エラーかを示します（0.1.2 で `<prefix>/bin/dsh` のようなシンボリックリンクにも対応）。 |
 | `rustxng_status` が実設定と違って `Replace web_search: no (default)` と出る | 0.1.2 で修正済み（live 値の比較漏れ）。旧版でも動作自体は正しく、表示だけの問題です。 |
 | 日本語ページが `����` や `�N` になる | 取得先が `<meta>` でしか文字コードを宣言していません。`webFetch.enabled` をオンにするか（[任意: 文字コード対応のページ取得](#任意-文字コード対応のページ取得)）、`curl … \| iconv -f SHIFT_JIS -t UTF-8` で読んでください。 |
+| DSH を閉じたのに rustxng が残る | utoStart.idleMinutes（既定 60 分）で自動停止します。すぐ止めたい場合は値を小さくするか、ustxng_status で managed かどうかを確認してください。  にすると停止しません。
 | 結果が少ない | 一部エンジンは IP 単位でレート制限されます。`rustxng_status` や RustXNG の `/stats` で停止中のエンジンを確認。`!engine query` は依然使えます。 |
 
 ## 開発
