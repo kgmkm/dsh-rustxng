@@ -10,7 +10,7 @@
  */
 import assert from 'node:assert/strict';
 import { normalizeSearchPayload, createRustxngClient } from '../lib/rustxng-client.js';
-import { resolveTarget } from '../scripts/install-binary.mjs';
+import { resolveTarget } from '../lib/install-binary.js';
 
 let failures = 0;
 function check(name, fn) {

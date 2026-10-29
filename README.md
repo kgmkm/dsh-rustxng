@@ -117,6 +117,7 @@ feature off hands `web.searchProvider` back to whatever it was before.
 | `autoStart.enabled` | `false` | Start the binary when the instance does not answer. Volatile. |
 | `autoStart.binaryPath` | `''` | Explicit binary path; empty searches `$DSH_HOME/bin`, `~/.local/bin` and `PATH`. |
 | `autoStart.idleMinutes` | `60` | Stop the started process after this many minutes without a search (`0` = never). Volatile. |
+| `autoStart.download` | `true` | Fetch a release binary into `$DSH_HOME/bin` when none is found (SHA-256 verified). |
 | `debug` | `false` | Log each provider decision. |
 
 ## Optional: charset-aware fetch
@@ -142,6 +143,27 @@ encodings), with a size cap and the same html/text classification.
 
 It does not touch RustXNG: it is plain HTTP plus decoding. Leave it off if you prefer the
 built-in fetcher.
+
+## First run: nothing is installed yet
+
+The plugin does not bundle the binary and ships with the replacement **off**, so a fresh
+install answers like this until one of the two paths below is taken:
+
+```
+RustXNG could not be reached: fetch failed (connect ECONNREFUSED 127.0.0.1:8888)
+Start it (for example `rustxng --port 8888`), or point the `baseUrl` setting at your instance.
+```
+
+**Easiest:** switch on *Start RustXNG automatically* in the card. On the next start it
+downloads the matching release (SHA-256 verified, ~22-27 MB) into `$DSH_HOME/bin`, starts it,
+and stops it again after the idle timeout. Nothing else to install.
+
+**Manual:** `npx dsh-rustxng-fetch` drops the binary in the same place; run it yourself, or
+wire it into launchd / systemd and leave auto-start off.
+
+The download never depends on GitHub's API: if the "latest release" lookup is rate-limited it
+falls back to a pinned version, and `autoStart.binaryPath` (or `--version`) needs no lookup at
+all.
 
 ## Optional: start and stop the instance
 
@@ -189,7 +211,7 @@ run it first when a search fails.
 | :--- | :--- |
 | Windows 10/11 x64 | Verified: release binary + this plugin (search, provider replacement, settings card) on DSH 0.2.1-rc.2 |
 | Linux x64 (glibc / musl) | Verified on a standalone Ubuntu 26.04 server (DSH 0.2.0-rc.2: replacement + card) and on WSL2 (both release builds 12/12) |
-| macOS arm64 / x64 | Supported by design (release assets exist); verification pending |
+| macOS arm64 / x64 | Verified on macOS 26.6.2 / M1 Max with DSH 0.2.1-rc.3 (Electron desktop app): 0.1.3 answered ustxng_search in ~3 s across 6-10 engines; 0.2.1 adds first-run download and auto-start |
 
 See [docs/PLATFORMS.md](docs/PLATFORMS.md) for how each platform is expected to be
 verified, binary placement, and the platform-specific notes (PATH, service managers, WSL,

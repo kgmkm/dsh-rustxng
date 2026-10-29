@@ -113,6 +113,7 @@ volatile フィールドなので、カードからの変更が即座に効き�
 | `autoStart.enabled` | `false` | インスタンスが応答しないときバイナリを起動する。volatile。 |
 | `autoStart.binaryPath` | `''` | バイナリの明示パス。空なら `$DSH_HOME/bin` → `~/.local/bin` → `PATH`。 |
 | `autoStart.idleMinutes` | `60` | 検索が無いままこの分数が過ぎたら、起動したプロセスを停止（`0` で停止しない）。volatile。 |
+| `autoStart.download` | `true` | バイナリが無ければ `$DSH_HOME/bin` へ取得（SHA-256 検証）。 |
 | `debug` | `false` | プロバイダの判断をログに出す。 |
 
 ## 任意: 文字コード対応のページ取得
@@ -136,6 +137,27 @@ volatile フィールドなので、カードからの変更が即座に効き�
 ```
 
 RustXNG は使いません（素の HTTP 取得＋復号のみ）。不要ならオフのままで構いません。
+
+## 初回だけ: まだ何も入っていない状態
+
+本プラグインはバイナリを同梱せず、差し替えも既定オフです。そのため導入直後は次の応答になります
+（仕様で、対処方法を明示しています）。
+
+```
+RustXNG could not be reached: fetch failed (connect ECONNREFUSED 127.0.0.1:8888)
+Start it (for example `rustxng --port 8888`), or point the `baseUrl` setting at your instance.
+```
+
+**いちばん簡単:** カードの「RustXNG を自動で起動する」をオンにするだけ。次回起動時に
+OS に合うリリースを取得（SHA-256 検証、約 22〜27 MB）して `$DSH_HOME/bin` に置き、起動し、
+アイドル時間が過ぎれば停止します。他に何も入れる必要はありません。
+
+**手動:** `npx dsh-rustxng-fetch` で同じ場所に取得し、自分で起動（launchd / systemd 等）。
+その場合は自動起動をオフのままにしてください。
+
+取得は GitHub の API に依存しません。「最新リリース」の問い合わせがレート制限でも
+固定バージョンにフォールバックし、`autoStart.binaryPath` か `--version` を指定すれば
+問い合わせ自体が不要です。
 
 ## 任意: プロセスの自動起動と自動終了
 
@@ -180,7 +202,7 @@ RustXNG をサービスとして常駐させたくない場合は、プラグイ
 | :--- | :--- |
 | Windows 10/11 x64 | 検証済み: リリースバイナリ＋本プラグイン（検索・差し替え・設定カード）を DSH 0.2.1-rc.2 で確認 |
 | Linux x64（glibc / musl） | 検証済み: 単体 Ubuntu 26.04 サーバ（DSH 0.2.0-rc.2 で差し替え・カード表示）、WSL2（両バイナリ 12/12） |
-| macOS arm64 / x64 | 設計上対応（リリース資産あり）。検証は未実施 |
+| macOS arm64 / x64 | 検証済み: macOS 26.6.2 / M1 Max、DSH 0.2.1-rc.3（Electron デスクトップアプリ）。0.1.3 で ustxng_search が 6〜10 エンジン・約 3 秒で応答。0.2.1 で初回取得と自動起動に対応 |
 
 検証手順・バイナリの置き場所・OS 毎の注意（PATH、サービス登録、WSL、musl）は
 [docs/PLATFORMS.md](docs/PLATFORMS.md) にまとめています。
@@ -194,7 +216,7 @@ RustXNG をサービスとして常駐させたくない場合は、プラグイ
 | Plugins にカードが出ない | プラグイン行が有効か（Plugin Manager）、DSH のバージョンが `dsh.compatibility` を満たすかを確認。チェックアウト導入ではスキーマを Harness 側から解決します。`rustxng_status` の `Config schema:` 行が `loaded via …` か解決エラーかを示します（0.1.2 で `<prefix>/bin/dsh` のようなシンボリックリンクにも対応）。 |
 | `rustxng_status` が実設定と違って `Replace web_search: no (default)` と出る | 0.1.2 で修正済み（live 値の比較漏れ）。旧版でも動作自体は正しく、表示だけの問題です。 |
 | 日本語ページが `����` や `�N` になる | 取得先が `<meta>` でしか文字コードを宣言していません。`webFetch.enabled` をオンにするか（[任意: 文字コード対応のページ取得](#任意-文字コード対応のページ取得)）、`curl … \| iconv -f SHIFT_JIS -t UTF-8` で読んでください。 |
-| DSH を閉じたのに rustxng が残る | utoStart.idleMinutes（既定 60 分）で自動停止します。すぐ止めたい場合は値を小さくするか、ustxng_status で managed かどうかを確認してください。  にすると停止しません。
+| DSH を閉じたのに rustxng が残る | `autoStart.idleMinutes`（既定 60 分）で自動停止します。すぐ止めたい場合は値を小さくするか、`rustxng_status` で managed かどうかを確認してください。`0` にすると停止しません。 |
 | 結果が少ない | 一部エンジンは IP 単位でレート制限されます。`rustxng_status` や RustXNG の `/stats` で停止中のエンジンを確認。`!engine query` は依然使えます。 |
 
 ## 開発

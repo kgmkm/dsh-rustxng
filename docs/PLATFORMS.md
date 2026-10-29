@@ -64,6 +64,22 @@ The plugin was then installed from a linked checkout and answered `web_search` (
   chmod +x ~/.dsh/bin/rustxng
   ```
 
+- **Verified 2026-10-29** on macOS 26.6.2 (Build 25G83) / Apple M1 Max, DSH 0.2.1-rc.3
+  (Electron desktop app, profile `desktop`, Node v22.22.3), plugin 0.1.3 and RustXNG 0.4.1
+  (`rustxng-v0.4.1-aarch64-apple-darwin`, SHA-256 verified):
+  `rustxng_search` answered in ~3 s with 6-10 engines per query, including Japanese queries;
+  the built-in `web_search` was unusable in that environment (HTTP 401 from the DeepSeek
+  search API), so the replacement was the only working path.
+  Two findings from that run, both addressed in 0.2.1:
+  - Several engines (Google, Brave, DuckDuckGo, Dogpile, Baidu, …) were permanently
+    `unresponsive` with Access denied / CAPTCHA / Parsing error from a residential line. That
+    is the instance's egress IP, not the plugin; the remaining engines still produce results.
+  - A fresh install failed with `ECONNREFUSED` until the binary was fetched and started by
+    hand. `autoStart.enabled` now downloads a verified release into `$DSH_HOME/bin` and starts
+    it, so the first run works without a terminal.
+  - Not confirmed on macOS yet: the idle stop (the timer logic is platform independent and is
+    covered by `tests/process.test.mjs` on Linux).
+
 - To keep it running without a terminal, a LaunchAgent works well:
 
   ```xml

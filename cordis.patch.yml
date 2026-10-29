@@ -53,5 +53,7 @@
           enabled: false
           binaryPath: ''
           idleMinutes: 60
+          # Download a release binary into $DSH_HOME/bin when none is found.
+          download: true
 
         debug: false

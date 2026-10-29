@@ -232,6 +232,10 @@ async function loadConfigSchema() {
           .default(60)
           .volatile()
           .description('Stop the started instance after this many minutes without a search (0 = never).'),
+        download: z
+          .boolean()
+          .default(true)
+          .description('Download a release binary into $DSH_HOME/bin when no binary is found.'),
       }),
     });
   } catch {
