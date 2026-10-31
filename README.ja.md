@@ -114,6 +114,7 @@ volatile フィールドなので、カードからの変更が即座に効き�
 | `autoStart.binaryPath` | `''` | バイナリの明示パス。空なら `$DSH_HOME/bin` → `~/.local/bin` → `PATH`。 |
 | `autoStart.idleMinutes` | `60` | 検索が無いままこの分数が過ぎたら、起動したプロセスを停止（`0` で停止しない）。volatile。 |
 | `autoStart.download` | `true` | バイナリが無ければ `$DSH_HOME/bin` へ取得（SHA-256 検証）。 |
+| `autoStart.version` | `''` | 取得する版を固定（例 `0.20.1`）。空なら最新リリースに追従。 |
 | `debug` | `false` | プロバイダの判断をログに出す。 |
 
 ## 任意: 文字コード対応のページ取得
@@ -137,6 +138,12 @@ volatile フィールドなので、カードからの変更が即座に効き�
 ```
 
 RustXNG は使いません（素の HTTP 取得＋復号のみ）。不要ならオフのままで構いません。
+
+> **`web` 行が公開されないホスト（DSH 0.2.0-rc.2）では `autoSelect` が効きません。**
+> 0.2.0-rc.2 は volatile フィールドを持つ設定行しか API に出さないため、選択を書き込めません。
+> 上のとおり profile patch に `searchProvider` と `fetchProvider` の両方を書いてください
+> （カードのスイッチは有効・無効の制御として引き続き機能します）。この状態は
+> `rustxng_status` が `Fetch provider: enabled, but the selection was not written (…)` と表示します。
 
 ## 初回だけ: まだ何も入っていない状態
 
@@ -202,6 +209,13 @@ RustXNG をサービスとして常駐させたくない場合は、プラグイ
   `Selection: web.searchProvider: rustxng (this plugin), web.fetchProvider: http` が出ます。
 - `rustxng_search` ツールも起動します（`web_search` を置き換えずツールだけ使う構成でも初回から動く）。
   `rustxng_status` は起動しません（報告のみ）。
+- **取得される版**: 常に最新リリースです。`lib/install-binary.js` の `PINNED_VERSION` は
+  GitHub API に届かないときだけ使う**オフライン用のフォールバック**で、意図的に少し古い
+  安定版を指しています。版を固定したい場合は `autoStart.version` を指定してください。
+- **停止の仕組み**: プラグイン解放時の SIGTERM と、`process.on('exit')` フックの 2 段構えです。
+  ホストが強制終了された場合はどちらも走らないため、**アイドルタイマー**が後始末をします。
+  デスクトップアプリや systemd の下では子が同じ cgroup に属するため、フックより先に
+  道連れで消えることがあります（結果は同じですが、素のシェルでは当てにしないでください）。
 
 サービス管理と併用する場合は `idleMinutes: 0` にしてください（両者は独立です）。
 

@@ -236,6 +236,10 @@ async function loadConfigSchema() {
           .boolean()
           .default(true)
           .description('Download a release binary into $DSH_HOME/bin when no binary is found.'),
+        version: z
+          .string()
+          .default('')
+          .description('Pin the download to one release (for example 0.20.1). Empty follows the latest release.'),
       }),
     });
   } catch {

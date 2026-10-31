@@ -10,16 +10,31 @@ asset + code path exist, verification checklist below not yet executed.
 | | Windows | macOS (arm64 / x64) | Linux (glibc / musl) |
 | :--- | :--- | :--- | :--- |
 | Release asset | `…-x86_64-pc-windows-msvc.exe` | `…-aarch64-apple-darwin`, `…-x86_64-apple-darwin` | `…-x86_64-unknown-linux-gnu`, `…-x86_64-unknown-linux-musl` |
-| `scripts/install-binary.mjs` | verified | supported | verified (glibc + musl) |
-| Plugin install (bundle patch) | verified | supported | verified (Ubuntu 26.04 server, WSL2) |
-| Provider replacement (`web_search`) | verified | supported | verified (Ubuntu 26.04 server, DSH 0.2.0-rc.2) |
-| Settings card | verified (registered & rendered in DSH 0.2.1-rc.2) | supported | verified (rendered on Ubuntu 26.04 server) |
-| Tools (`rustxng_search` / `rustxng_status`) | verified | supported | verified |
+| `scripts/install-binary.mjs` | verified | verified (0.4.1, 23.4 MB, SHA-256) | verified (glibc + musl) |
+| Plugin install (bundle patch) | verified | verified (0.1.3 → 0.4.0) | verified (Ubuntu 26.04 server, WSL2) |
+| Provider replacement (`web_search`) | verified | verified | verified (Ubuntu 26.04 server, DSH 0.2.0-rc.2) |
+| Settings card | verified (registered & rendered in DSH 0.2.1-rc.2) | verified | verified (rendered on Ubuntu 26.04 server) |
+| Tools (`rustxng_search` / `rustxng_status`) | verified | verified (0.4.0: tool triggers auto-start) | verified (0.4.0: all 8 checks) |
+| Auto-start / download / idle stop | verified (0.2.0–0.3.0) | verified (0.2.2 → 0.4.0) | verified (0.4.0: start, 70 s idle stop, restart) |
 
 ### Linux verification run
 
-Ubuntu 26.04.1 LTS, x86_64, glibc 2.43, Node 24.22.0, **DSH 0.2.0-rc.2** (npm global install),
-RustXNG 0.4.0 running as a systemd user unit — reported from the server itself:
+**0.4.0 re-run (2026-10-31, all 8 checks OK):** auto-download from an empty `~/.dsh/bin`
+(`-rwxr-xr-x`, RustXNG 0.20.1), start, idle stop after 70 s with `idleMinutes: 1`, restart on
+the next search, child gone within 1 s of the host's SIGTERM, `Config schema: loaded via host`,
+`Selection: unknown (the host does not publish this row)` — the expected degradation on
+0.2.0-rc.2 — `web_search` through RustXNG, and the JRA Shift_JIS page decoded correctly.
+Two notes from that run:
+
+- The child disappeared with the host's **cgroup scope**, not because the plugin's disposer
+  ran: under a desktop app or systemd the child shares the scope. `process.on('exit')` now
+  sends SIGTERM as well, so a plain shell (no scope) also cleans up; the idle timer remains
+  the fallback for a SIGKILLed host.
+- Observing that "dies with the host" behaviour needs the observer outside the scope:
+  `setsid` does not escape a cgroup — `systemd-run --user --scope` does.
+
+Earlier run: Ubuntu 26.04.1 LTS, x86_64, glibc 2.43, Node 24.22.0, **DSH 0.2.0-rc.2**
+(npm global install), RustXNG 0.4.0 as a systemd user unit — reported from the server itself:
 
 | | glibc build | musl build |
 | :--- | :--- | :--- |

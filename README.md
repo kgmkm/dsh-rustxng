@@ -118,6 +118,7 @@ feature off hands `web.searchProvider` back to whatever it was before.
 | `autoStart.binaryPath` | `''` | Explicit binary path; empty searches `$DSH_HOME/bin`, `~/.local/bin` and `PATH`. |
 | `autoStart.idleMinutes` | `60` | Stop the started process after this many minutes without a search (`0` = never). Volatile. |
 | `autoStart.download` | `true` | Fetch a release binary into `$DSH_HOME/bin` when none is found (SHA-256 verified). |
+| `autoStart.version` | `''` | Pin the download to one release (e.g. `0.20.1`). Empty follows the latest release. |
 | `debug` | `false` | Log each provider decision. |
 
 ## Optional: charset-aware fetch
@@ -143,6 +144,12 @@ encodings), with a size cap and the same html/text classification.
 
 It does not touch RustXNG: it is plain HTTP plus decoding. Leave it off if you prefer the
 built-in fetcher.
+
+> **On hosts that hide the `web` settings row** (DSH 0.2.0-rc.2 publishes only entries with a
+> volatile field), `autoSelect` cannot write the selection — it needs the same context rules
+> as the search side. Set both fields in the profile patch, exactly as above; the card's
+> switches then still control whether the plugin is active. `rustxng_status` says so:
+> `Fetch provider: enabled, but the selection was not written (…)`.
 
 ## First run: nothing is installed yet
 
@@ -212,6 +219,15 @@ Behaviour:
 - The `rustxng_search` tool starts the instance too, so a tool-only setup (no replacement of
   `web_search`) also works from the first call. `rustxng_status` never starts it — it only
   reports.
+- **Which version is downloaded:** always the latest release. `PINNED_VERSION` in
+  `lib/install-binary.js` is only the offline fallback used when GitHub's API cannot be
+  reached, and it is deliberately an older known-good build. Set `autoStart.version` when you
+  want a reproducible version instead.
+- **How it stops:** SIGTERM from the plugin's disposer, and again from a `process.on('exit')`
+  hook. A host that is killed outright never runs either, which is what the idle timeout
+  covers. Under a desktop app or a systemd unit the child also shares the host's cgroup and
+  may disappear with it before any hook runs — same outcome, but do not rely on that in a
+  plain shell.
 
 Set `idleMinutes: 0` when using a service manager instead; the two mechanisms are independent.
 
