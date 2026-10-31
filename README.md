@@ -223,11 +223,15 @@ Behaviour:
   `lib/install-binary.js` is only the offline fallback used when GitHub's API cannot be
   reached, and it is deliberately an older known-good build. Set `autoStart.version` when you
   want a reproducible version instead.
-- **How it stops:** SIGTERM from the plugin's disposer, and again from a `process.on('exit')`
-  hook. A host that is killed outright never runs either, which is what the idle timeout
-  covers. Under a desktop app or a systemd unit the child also shares the host's cgroup and
-  may disappear with it before any hook runs — same outcome, but do not rely on that in a
-  plain shell.
+- **How it stops:** three paths, because none of them covers everything.
+  1. the plugin's disposer, when DSH unloads the plugin;
+  2. `process.on('exit')`, for a normal exit;
+  3. `SIGTERM` / `SIGINT` / `SIGHUP` handlers, because a signal ends Node **without** emitting
+     `exit`. These stop the child and then re-raise the signal with the default disposition —
+     only when nothing else is listening, so a Harness that shuts itself down keeps control.
+  A `SIGKILL`ed host runs none of them; the idle timeout covers that. Under a desktop app or a
+  systemd unit the child also shares the host's cgroup and may disappear with it first — same
+  outcome, but do not rely on that in a plain shell.
 
 Set `idleMinutes: 0` when using a service manager instead; the two mechanisms are independent.
 
@@ -273,6 +277,10 @@ musl).
 node tests/smoke.mjs            # payload normalisation + platform mapping (+ live search if an instance answers)
 node tests/apply.test.mjs       # host half against a stub instance: provider gate, selection, tools, live values
 node tests/resolve.test.mjs     # host-package resolution through a symlinked launcher (Linux npm-global layout)
+node tests/tools.test.mjs       # the search tool triggers auto-start; status stays read-only
+node tests/install.test.mjs     # release asset naming, SHA-256 verification, the pinned fallback
+node tests/process.test.mjs     # idle rule, binary discovery, a real start/health/idle-stop cycle
+node tests/signal.test.mjs      # SIGTERM takes the child with it (POSIX; skips on Windows)
 ```
 
 `apply.test.mjs` and `resolve.test.mjs` need no running instance and no network.

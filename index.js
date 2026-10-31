@@ -946,6 +946,7 @@ export function apply(ctx, config) {
     // Graceful Harness shutdown: stop the instance we started. A killed Harness never runs
     // this, which is why `autoStart.idleMinutes` exists.
     processManager.stop('plugin unloaded');
+    processManager.dispose();
   });
 }
 

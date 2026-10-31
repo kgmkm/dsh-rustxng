@@ -27,9 +27,13 @@ the next search, child gone within 1 s of the host's SIGTERM, `Config schema: lo
 Two notes from that run:
 
 - The child disappeared with the host's **cgroup scope**, not because the plugin's disposer
-  ran: under a desktop app or systemd the child shares the scope. `process.on('exit')` now
-  sends SIGTERM as well, so a plain shell (no scope) also cleans up; the idle timer remains
-  the fallback for a SIGKILLed host.
+  ran: under a desktop app or systemd the child shares the scope. A follow-up run then showed
+  that `process.on('exit')` alone is not enough either — a signal ends Node without emitting
+  it, so the child survived as an orphan wherever the cgroup did not reach it. 0.4.2 adds
+  `SIGTERM` / `SIGINT` / `SIGHUP` handlers that stop the child and then re-raise the signal
+  **only when nothing else is listening**, so a Harness that shuts itself down keeps control.
+  `tests/signal.test.mjs` covers both shapes on POSIX (plain host and host with its own
+  handler); the idle timer stays the fallback for a SIGKILLed host.
 - Observing that "dies with the host" behaviour needs the observer outside the scope:
   `setsid` does not escape a cgroup — `systemd-run --user --scope` does.
 
