@@ -19,6 +19,22 @@ fan-out し、重複を除いて結果を返します。広告も追跡もあり
 DSH 本体には一切パッチを当てていません。公開 API の `ctx.web.registerSearchProvider()` と、
 通常の設定フィールド `web.searchProvider` だけを使うので、Harness を更新しても壊れません。
 
+## このプラグインは必要か
+
+RustXNG 本体は **rdsh** CLI 向けの統合を用意しています。何を置き換えたいかで選んでください。
+
+| 状況 | 使うもの |
+| :--- | :--- |
+| **rdsh だけ**を使っていて、`rdsh search-web` を RustXNG にしたい | **RustXNG 本体の手順**: [`docs/RDSH.md`](https://github.com/sahenjp/RustXNG/blob/main/docs/RDSH.md) — `rdsh rustxng install` → `rdsh search-web --engine rustxng "query"`。**プラグインは不要**です（設定不要で、自分でサイドカーを起動します） |
+| **DSH** を使っていて、内蔵 **`web_search` を差し替えたい** | **このプラグイン**。rdsh の統合は rdsh CLI のシェルコマンドで、Harness の `web_search` には触れないため、DSH の中では何も変わりません |
+| **`web_fetch` の文字化け**（`<meta>` でしか charset を宣言しないページ）を直したい | **このプラグイン**（`webFetch.enabled`）。rdsh 側の統合は検索のみです |
+| エージェントに **ツールとして**呼ばせたい（`rustxng_search` / `rustxng_status`） | **このプラグイン** |
+| 両方使い、**1 つのインスタンスを共有**したい | DSH 側はこのプラグイン、rdsh 側は `RUSTXNG_URL=http://127.0.0.1:8888 rdsh search-web --engine rustxng …` |
+
+つまり **DSH の検索を置き換えられるのはこのプラグインだけ**です。それが不要で、RustXNG を
+rdsh から使うだけなら、上流の手順のほうが短く済みます。インスタンスとバイナリの共有方法は
+[rdsh と併用する場合](#rdsh-と併用する場合) を参照してください。
+
 ---
 
 ## 必要なもの

@@ -21,6 +21,22 @@ and adds:
 Nothing in DSH is patched: the plugin uses the documented `ctx.web.registerSearchProvider()`
 API and the ordinary `web.searchProvider` settings field, so it survives Harness upgrades.
 
+## Do you need this plugin at all?
+
+RustXNG has its own integration for the **rdsh** CLI. Pick by what you want to replace:
+
+| Your situation | Use |
+| :--- | :--- |
+| You only run **rdsh** and want `rdsh search-web` to use RustXNG | **RustXNG's own guide**: [`docs/RDSH.md`](https://github.com/sahenjp/RustXNG/blob/main/docs/RDSH.md) — `rdsh rustxng install`, then `rdsh search-web --engine rustxng "query"`. No plugin needed; it is configuration-free and starts its own sidecar. |
+| You use **DSH** and want the built-in **`web_search` replaced** | **This plugin.** rdsh's integration is a shell command for the rdsh CLI; it does not touch the Harness's `web_search`, so inside DSH it changes nothing. |
+| You need **`web_fetch` to stop garbling** pages whose charset is declared only in `<meta>` | **This plugin** (`webFetch.enabled`) — the rdsh path is search only. |
+| You want the agent to call RustXNG **as a tool** (`rustxng_search` / `rustxng_status`) | **This plugin.** |
+| You use both and want **one instance for both** | This plugin for DSH, and point rdsh at it: `RUSTXNG_URL=http://127.0.0.1:8888 rdsh search-web --engine rustxng …` |
+
+In short: **replacing DSH's search is something only this plugin does**; if you do not need
+that and you drive RustXNG from rdsh, the upstream guide is the shorter path. See
+[If you also use rdsh](#if-you-also-use-rdsh) for sharing one instance and one binary.
+
 ---
 
 ## Requirements
