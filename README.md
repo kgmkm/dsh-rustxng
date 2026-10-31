@@ -229,7 +229,9 @@ Behaviour:
   3. `SIGTERM` / `SIGINT` / `SIGHUP` handlers, because a signal ends Node **without** emitting
      `exit`. These stop the child and then re-raise the signal with the default disposition —
      only when nothing else is listening, so a Harness that shuts itself down keeps control.
-  A `SIGKILL`ed host runs none of them; the idle timeout covers that. Under a desktop app or a
+  A `SIGKILL`ed host runs none of them; the idle timeout covers that — so **with
+  `idleMinutes: 0` a SIGKILLed host leaves the instance running**, which is the trade-off of
+  asking for "never stop it". Under a desktop app or a
   systemd unit the child also shares the host's cgroup and may disappear with it first — same
   outcome, but do not rely on that in a plain shell.
 

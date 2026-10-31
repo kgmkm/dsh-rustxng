@@ -19,6 +19,13 @@ asset + code path exist, verification checklist below not yet executed.
 
 ### Linux verification run
 
+**0.4.2 confirmation (2026-10-31):** the signal fix was verified on that server with a
+controlled A/B — same script, same conditions, `idleMinutes: 0` (so the idle timer could not
+help): **0.4.1 left the child alive (orphaned), 0.4.2 stopped it.** With a host that has its
+own SIGTERM handler, the host's cleanup ran to completion, the exit code stayed the host's
+(`code=0`), and the child was stopped anyway — i.e. the plugin does not hijack a shutdown.
+`tests/signal.test.mjs` 4 PASS.
+
 **0.4.0 re-run (2026-10-31, all 8 checks OK):** auto-download from an empty `~/.dsh/bin`
 (`-rwxr-xr-x`, RustXNG 0.20.1), start, idle stop after 70 s with `idleMinutes: 1`, restart on
 the next search, child gone within 1 s of the host's SIGTERM, `Config schema: loaded via host`,
