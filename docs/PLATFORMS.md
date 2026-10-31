@@ -19,6 +19,13 @@ asset + code path exist, verification checklist below not yet executed.
 
 ### Linux verification run
 
+**0.5.0 (2026-10-31, Windows):** the spawned instance is now given `RUSTXNG_IDLE_TIMEOUT`, so
+it ends itself when nothing asked for it — the only cleanup that survives a `SIGKILL`ed host.
+Verified two ways: RustXNG 0.24.0 exits on its own with `RUSTXNG_IDLE_TIMEOUT=5` (about 9 s
+with the request gap) and with what the plugin passes (`idleMinutes: 0.05` → the child was
+gone 3 s after the search, long before the plugin's 30 s watchdog could act). RustXNG 0.4.1
+ignores the variable, which is why the watchdog stays.
+
 **0.4.2 confirmation (2026-10-31):** the signal fix was verified on that server with a
 controlled A/B — same script, same conditions, `idleMinutes: 0` (so the idle timer could not
 help): **0.4.1 left the child alive (orphaned), 0.4.2 stopped it.** With a host that has its

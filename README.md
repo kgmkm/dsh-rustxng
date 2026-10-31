@@ -223,15 +223,20 @@ Behaviour:
   `lib/install-binary.js` is only the offline fallback used when GitHub's API cannot be
   reached, and it is deliberately an older known-good build. Set `autoStart.version` when you
   want a reproducible version instead.
-- **How it stops:** three paths, because none of them covers everything.
+- **How it stops:** four paths, because none of them covers everything.
   1. the plugin's disposer, when DSH unloads the plugin;
   2. `process.on('exit')`, for a normal exit;
   3. `SIGTERM` / `SIGINT` / `SIGHUP` handlers, because a signal ends Node **without** emitting
      `exit`. These stop the child and then re-raise the signal with the default disposition —
-     only when nothing else is listening, so a Harness that shuts itself down keeps control.
-  A `SIGKILL`ed host runs none of them; the idle timeout covers that — so **with
-  `idleMinutes: 0` a SIGKILLed host leaves the instance running**, which is the trade-off of
-  asking for "never stop it". Under a desktop app or a
+     only when nothing else is listening, so a Harness that shuts itself down keeps control;
+  4. the instance's own idle timer: the spawned process is given `RUSTXNG_IDLE_TIMEOUT`
+     (the same number of minutes), so builds that support it exit by themselves.
+  Path 4 is the only one that survives a `SIGKILL`ed host, which is why it is set whenever
+  `idleMinutes` is above 0. It needs a build that understands the variable — verified with
+  RustXNG 0.24.0; 0.4.x ignores it, and the plugin's own watchdog (path 3's timer, 30 s
+  checks) covers those. With `idleMinutes: 0` nothing is scheduled at all, so a `SIGKILL`ed
+  host leaves the instance running — the trade-off of asking for "never stop it". Under a
+  desktop app or a
   systemd unit the child also shares the host's cgroup and may disappear with it first — same
   outcome, but do not rely on that in a plain shell.
 
@@ -248,6 +253,25 @@ Set `idleMinutes: 0` when using a service manager instead; the two mechanisms ar
 `rustxng_status` reports whether the instance answers, its version, how many engines are
 enabled, whether the provider is registered, and whether `web.searchProvider` points at it —
 run it first when a search fails.
+
+## If you also use rdsh
+
+RustXNG ships its own integration for [`rdsh`](https://github.com/sahenjp/RustXNG/blob/main/docs/RDSH.md):
+`rdsh search-web --engine rustxng` needs no configuration (it looks at `SEARXNG_URL`,
+`RUSTXNG_URL`, a local `rustxng` command, then `127.0.0.1:8888`), and `rdsh rustxng install`
+puts a binary in `~/.local/bin`.
+
+That path is **not a replacement for this plugin**: it is a shell command for the rdsh CLI,
+while this plugin plugs into the Harness's `web_search`/`web_fetch` seam and adds
+model-facing tools. Use whichever matches what you run — and if you run both, one instance
+serves both:
+
+- point rdsh at the plugin's instance with `RUSTXNG_URL=http://127.0.0.1:8888`, or
+- let the plugin reuse rdsh's binary: the search order is `autoStart.binaryPath` →
+  `$DSH_HOME/bin` → `~/.local/bin` → `PATH`, and `rustxng_status` prints which file is
+  actually running (`Auto-start: on — managed (pid …) [rustxng]`).
+
+Set `autoStart.binaryPath` when you have several builds and want a specific one.
 
 ## Platform support
 

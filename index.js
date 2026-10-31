@@ -18,7 +18,7 @@
 import { createRequire } from 'node:module';
 import { realpathSync, mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createRustxngClient, readLive } from './lib/rustxng-client.js';
 import { buildRustxngTools } from './lib/tools.js';
@@ -790,9 +790,11 @@ export function apply(ctx, config) {
                   (() => {
                     const info = processManager.status();
                     const managed = info.managed ? `managed (pid ${info.pid})` : 'not managed by this plugin';
+                    // Which file is running matters when several builds exist on the machine.
+                    const binary = info.binary === undefined ? '' : ` [${basename(info.binary)}]`;
                     const idle = info.idleMs === undefined ? 'no activity yet' : `${Math.round(info.idleMs / 60000)} min idle`;
                     return (
-                      `Auto-start: ${info.autoStart ? 'on' : 'off'} — ${managed}, ` +
+                      `Auto-start: ${info.autoStart ? 'on' : 'off'} — ${managed}${binary}, ` +
                       `idle timeout ${info.idleMinutes === 0 ? 'off' : `${info.idleMinutes} min`} (${idle})` +
                       (info.lastError === undefined ? '' : `, last error: ${info.lastError}`)
                     );
