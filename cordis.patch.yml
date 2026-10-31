@@ -49,8 +49,10 @@
         # Start the binary for the user when the instance does not answer, and stop it
         # again after idleMinutes without a search (0 = keep until DSH unloads the plugin).
         # Only a process this plugin started is ever stopped.
+        # On by default: a fresh install would otherwise answer every search with ECONNREFUSED.
+        # Nothing downloads at mount time; the first search fetches and starts the instance.
         autoStart:
-          enabled: false
+          enabled: true
           binaryPath: ''
           idleMinutes: 60
           # Download a release binary into $DSH_HOME/bin when none is found.

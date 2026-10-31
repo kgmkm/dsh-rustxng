@@ -91,6 +91,10 @@ const liveBaseUrl = process.env.RUSTXNG_BASE_URL;
 /** Minimal stand-in for a Cordis context: only the surfaces the plugin touches. */
 function createFakeHost({ selection = 'rustxng', updateThrows = true, hideWebRow = false } = {}) {
   const record = {
+    // Flipping this models the loader closing its mount transaction: writes are refused
+    // while the plugin mounts and allowed afterwards, which is the real 0.2.1-rc.3 shape.
+    refuseWrites: updateThrows,
+    refused: [],
     providers: [],
     fetchProviders: [],
     tools: [],
@@ -116,12 +120,18 @@ function createFakeHost({ selection = 'rustxng', updateThrows = true, hideWebRow
       return rows;
     },
     async update(ns, patch) {
+      if (record.refuseWrites) {
+        record.refused.push({ ns, patch });
+        throw new Error('HMR transactions cannot be nested');
+      }
       record.updates.push({ ns, patch });
-      if (updateThrows) throw new Error('HMR transactions cannot be nested');
     },
     async mutate(ns, ops) {
+      if (record.refuseWrites) {
+        record.refused.push({ ns, ops });
+        throw new Error('HMR transactions cannot be nested');
+      }
       record.updates.push({ ns, ops });
-      if (updateThrows) throw new Error('HMR transactions cannot be nested');
     },
   };
 
@@ -244,12 +254,38 @@ apply(takeover.ctx, config);
 await tick(150);
 
 await check('attempts the hand-over when nothing is selected', () => {
-  assert.ok(takeover.record.updates.length >= 1, 'expected a settings update attempt');
-  assert.equal(takeover.record.updates[0].ns, 'include:web', `ns: ${takeover.record.updates[0]?.ns}`);
+  assert.ok(takeover.record.refused.length >= 1, 'expected a settings update attempt');
+  assert.equal(takeover.record.refused[0].ns, 'include:web', `ns: ${takeover.record.refused[0]?.ns}`);
+  assert.equal(takeover.record.updates.length, 0, 'a refused attempt must not count as applied');
 });
 
 await check('provider is unavailable until the selection names it', () => {
   assert.equal(takeover.record.providers[0].available(), false);
+});
+
+// --- 2b. the hand-over is retried from a request context (0.2.1-rc.3) -----
+// Mounting happens inside the loader's transaction, so every write from `apply()` is refused;
+// a tool call runs on the agent's context, where the same write is allowed. This is the
+// macOS report reproduced: autoSelect on, no selection written at mount, fixed on first use.
+const lateHost = createFakeHost({ selection: null, updateThrows: true });
+apply(lateHost.ctx, config);
+await tick(150);
+const lateRefused = lateHost.record.refused.length;
+
+const appliedDuringMount = lateHost.record.updates.length;
+lateHost.record.refuseWrites = false; // the mount transaction is over
+const lateStatus = lateHost.record.tools.find((tool) => tool.name === 'rustxng_status');
+await lateStatus.execute({}, { signal: undefined });
+
+await check('refuses the hand-over while the mount transaction is open', () => {
+  assert.ok(lateRefused >= 1, 'the mount-time write must have been refused');
+  assert.equal(appliedDuringMount, 0, 'nothing may be applied while the transaction is open');
+});
+
+await check('applies the hand-over once a request context is available', () => {
+  const applied = lateHost.record.updates.find((entry) => entry.patch?.searchProvider === 'rustxng');
+  assert.ok(applied !== undefined, JSON.stringify(lateHost.record.updates));
+  assert.equal(applied.ns, 'include:web');
 });
 
 // --- 3. enabled and another provider selected ----------------------------
@@ -259,8 +295,8 @@ await tick(150);
 
 await check('takes the selection over from a different provider', () => {
   assert.equal(other.record.providers.length, 1, 'registered');
-  assert.ok(other.record.updates.length >= 1, 'autoSelect replaces the previous choice');
-  assert.equal(other.record.updates[0].patch.searchProvider, 'rustxng');
+  assert.ok(other.record.refused.length >= 1, 'autoSelect tries to replace the previous choice');
+  assert.equal(other.record.refused[0].patch.searchProvider, 'rustxng');
 });
 
 await check('reports unavailable while the other provider is still selected', () => {

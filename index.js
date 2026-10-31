@@ -443,6 +443,40 @@ export function apply(ctx, config) {
   /** Current `web.fetchProvider`. */
   const fetchSelectionState = () => readWebSelection('fetchProvider', 'DSH_WEB_FETCH_PROVIDER');
 
+  /**
+   * Retry the `web.searchProvider` hand-over from a request context.
+   *
+   * The mount-time attempt is refused by the loader: `settings.update()` goes through
+   * `runExclusive`, and `apply()` already runs inside that transaction, so the write is
+   * rejected with "HMR transactions cannot be nested". `AsyncLocalStorage` keeps that flag for
+   * every timer the plugin creates, which is why the delayed retries at mount time did not
+   * help either. A search or a tool call, however, runs on the caller's context (the agent's
+   * request), where the transaction is closed — so that is the first place the write works.
+   *
+   * @returns {Promise<void>} Resolves even when the attempt is skipped or refused.
+   */
+  let handOverApplied = false;
+  let handOverAttempts = 0;
+  const tryHandOver = async () => {
+    if (handOverApplied === true) return;
+    const settings = webConfig();
+    if (settings.enabled !== true || settings.autoSelect !== true) return;
+    const current = selectionState();
+    if (current.known === true && current.value === RUSTXNG_SEARCH_PROVIDER_ID) {
+      handOverApplied = true;
+      return;
+    }
+    if (handOverAttempts >= 5) return;
+    handOverAttempts += 1;
+    const outcome = await selection.take().catch(() => undefined);
+    if (outcome?.applied === true) {
+      handOverApplied = true;
+      log('[rustxng] selected the provider from the request context');
+      return;
+    }
+    log(`[rustxng] the hand-over was refused again: ${outcome?.reason ?? 'unknown'}`);
+  };
+
   let webFiber = null;
   let toolsFiber = null;
   let fetchFiber = null;
@@ -473,6 +507,7 @@ export function apply(ctx, config) {
           getSelection: selectionState,
           ensureStarted: ensureInstance,
           canStart: () => processManager.config().enabled === true,
+          handOver: tryHandOver,
           log: (message) => {
             try {
               inner.logger?.debug?.(message);
@@ -725,6 +760,7 @@ export function apply(ctx, config) {
                 defineTool,
                 client,
                 getConfig,
+                ensureSelected: tryHandOver,
                 statusLines: () => [
                   `Provider: ${webState}`,
                   `Fetch provider: ${fetchState}`,
@@ -837,14 +873,8 @@ export function apply(ctx, config) {
     // on, so a host without `loader/volatile-update` still reflects reachability after a toggle.
     startProbeLoop();
     startIdleWatchdog();
-    if (webConfig().enabled === true && processManager.config().enabled === true) {
-      void ensureInstance().then((outcome) => {
-        if (outcome?.started === true) log(`[rustxng] started the instance (pid ${outcome.pid})`);
-        else if (outcome?.reason !== undefined && outcome.reason !== 'the instance already answers') {
-          log(`[rustxng] auto-start: ${outcome.reason}`);
-        }
-      });
-    }
+    // Auto-start is deliberately lazy: it runs from the first search (see the provider's
+    // ensureStarted), so mounting the plugin never downloads anything on its own.
   };
 
   /**
@@ -859,6 +889,10 @@ export function apply(ctx, config) {
       } catch (error) {
         ctx.logger?.warn?.(`[rustxng] failed to apply the new settings: ${String(error)}`);
       }
+      // This event is emitted by whoever mutated the settings (the card, over the host's
+      // request context), so the selection write is allowed here even though the mount-time
+      // one is not.
+      void tryHandOver();
     });
   }
 

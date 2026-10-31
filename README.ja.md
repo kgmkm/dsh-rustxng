@@ -110,7 +110,7 @@ volatile フィールドなので、カードからの変更が即座に効き�
 | `webSearch.autoSelect` | `true` | `web.searchProvider = 'rustxng'` を自動で書く。volatile。 |
 | `webFetch.enabled` | `false` | `web_fetch` を文字コード対応の取得層に差し替える。volatile。 |
 | `webFetch.autoSelect` | `true` | `web.fetchProvider = 'rustxng-http'` を自動で書く。volatile。 |
-| `autoStart.enabled` | `false` | インスタンスが応答しないときバイナリを起動する。volatile。 |
+| `autoStart.enabled` | `true`（同梱パッチ） | 応答が無いときバイナリを起動する。volatile。スキーマ既定は false で、バンドルが有効化します。 |
 | `autoStart.binaryPath` | `''` | バイナリの明示パス。空なら `$DSH_HOME/bin` → `~/.local/bin` → `PATH`。 |
 | `autoStart.idleMinutes` | `60` | 検索が無いままこの分数が過ぎたら、起動したプロセスを停止（`0` で停止しない）。volatile。 |
 | `autoStart.download` | `true` | バイナリが無ければ `$DSH_HOME/bin` へ取得（SHA-256 検証）。 |
@@ -148,7 +148,7 @@ RustXNG could not be reached: fetch failed (connect ECONNREFUSED 127.0.0.1:8888)
 Start it (for example `rustxng --port 8888`), or point the `baseUrl` setting at your instance.
 ```
 
-**いちばん簡単:** カードの「RustXNG を自動で起動する」をオンにするだけ。次回起動時に
+**いちばん簡単:** 同梱バンドルでは「RustXNG を自動で起動する」が最初からオンです。初回の検索時に取得・起動します。次回起動時に
 OS に合うリリースを取得（SHA-256 検証、約 22〜27 MB）して `$DSH_HOME/bin` に置き、起動し、
 アイドル時間が過ぎれば停止します。他に何も入れる必要はありません。
 
@@ -158,6 +158,23 @@ OS に合うリリースを取得（SHA-256 検証、約 22〜27 MB）して `$D
 取得は GitHub の API に依存しません。「最新リリース」の問い合わせがレート制限でも
 固定バージョンにフォールバックし、`autoStart.binaryPath` か `--version` を指定すれば
 問い合わせ自体が不要です。
+
+## 自動選択（autoSelect）について
+
+`autoSelect` は `web.searchProvider = 'rustxng'` を自動で書きますが、**プラグインのマウント中は
+書けません**。ローダーが `apply()` を自身のトランザクション内で実行しており、設定書き込みは
+*"HMR transactions cannot be nested"* で拒否されるためです。0.3.0 では、書き込みが許される
+文脈——ツール呼び出し（`rustxng_status` / `rustxng_search`）またはカードからの設定変更——で
+再試行し、結果を `rustxng_status` に表示します。
+
+それでも書けないホストでは、一度だけ手動で設定してください（以後は記憶されます）。
+
+```yaml
+- id: web
+  config:
+    searchProvider: rustxng
+    fetchProvider: http
+```
 
 ## 任意: プロセスの自動起動と自動終了
 

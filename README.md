@@ -114,7 +114,7 @@ feature off hands `web.searchProvider` back to whatever it was before.
 | `webSearch.autoSelect` | `true` | Write `web.searchProvider = 'rustxng'` for you. Volatile. |
 | `webFetch.enabled` | `false` | Replace `web_fetch` with the charset-aware fetcher. Volatile. |
 | `webFetch.autoSelect` | `true` | Write `web.fetchProvider = 'rustxng-http'` for you. Volatile. |
-| `autoStart.enabled` | `false` | Start the binary when the instance does not answer. Volatile. |
+| `autoStart.enabled` | `true` (shipped patch) | Start the binary when the instance does not answer. Volatile. Off in the schema; the bundle turns it on. |
 | `autoStart.binaryPath` | `''` | Explicit binary path; empty searches `$DSH_HOME/bin`, `~/.local/bin` and `PATH`. |
 | `autoStart.idleMinutes` | `60` | Stop the started process after this many minutes without a search (`0` = never). Volatile. |
 | `autoStart.download` | `true` | Fetch a release binary into `$DSH_HOME/bin` when none is found (SHA-256 verified). |
@@ -154,7 +154,7 @@ RustXNG could not be reached: fetch failed (connect ECONNREFUSED 127.0.0.1:8888)
 Start it (for example `rustxng --port 8888`), or point the `baseUrl` setting at your instance.
 ```
 
-**Easiest:** switch on *Start RustXNG automatically* in the card. On the next start it
+**Easiest:** the shipped bundle already has *Start RustXNG automatically* on, so the first search fetches and starts the instance; nothing to click. On the next start it
 downloads the matching release (SHA-256 verified, ~22-27 MB) into `$DSH_HOME/bin`, starts it,
 and stops it again after the idle timeout. Nothing else to install.
 
@@ -164,6 +164,24 @@ wire it into launchd / systemd and leave auto-start off.
 The download never depends on GitHub's API: if the "latest release" lookup is rate-limited it
 falls back to a pinned version, and `autoStart.binaryPath` (or `--version`) needs no lookup at
 all.
+
+## About the automatic selection
+
+`autoSelect` writes `web.searchProvider = 'rustxng'` for you, but a plugin cannot do that
+while it is mounting: the loader runs `apply()` inside its own transaction and rejects the
+settings write with *"HMR transactions cannot be nested"*. 0.3.0 therefore retries the write
+from a context that is allowed to write — a tool call (`rustxng_status` / `rustxng_search`) or
+a live settings change from the card — and reports the outcome in `rustxng_status`.
+
+If it still cannot be written (for example on a host that refuses plugin-initiated writes),
+set the field once by hand; it is remembered:
+
+```yaml
+- id: web
+  config:
+    searchProvider: rustxng
+    fetchProvider: http
+```
 
 ## Optional: start and stop the instance
 
