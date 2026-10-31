@@ -207,7 +207,11 @@ Behaviour:
 - A Harness that is killed never runs that cleanup, so the **idle timeout** finishes the job:
   after `idleMinutes` without a search the process is stopped, and the next search starts it
   again. Reachability probes do not count as activity.
-- `rustxng_status` reports `Auto-start: on — managed (pid …), idle timeout 60 min (12 min idle)`.
+- `rustxng_status` reports `Auto-start: on — managed (pid …), idle timeout 60 min (12 min idle)`
+  and `Selection: web.searchProvider: rustxng (this plugin), web.fetchProvider: http`.
+- The `rustxng_search` tool starts the instance too, so a tool-only setup (no replacement of
+  `web_search`) also works from the first call. `rustxng_status` never starts it — it only
+  reports.
 
 Set `idleMinutes: 0` when using a service manager instead; the two mechanisms are independent.
 

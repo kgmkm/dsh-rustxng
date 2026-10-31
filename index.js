@@ -761,10 +761,28 @@ export function apply(ctx, config) {
                 client,
                 getConfig,
                 ensureSelected: tryHandOver,
+                ensureStarted: ensureInstance,
                 statusLines: () => [
                   `Provider: ${webState}`,
                   `Fetch provider: ${fetchState}`,
-                  `Selection taken over: ${selection.pending() ?? '(none)'} / ${fetchSelection.pending() ?? '(none)'}`,
+                  (() => {
+                    // Report the actual selection, not only what this session changed: an
+                    // instance selected before start-up used to print "(none)" next to a
+                    // "selected in web.searchProvider" line, which read like a contradiction.
+                    const describe = (label, state, id) => {
+                      if (state.known !== true) return `${label}: unknown (the host does not publish this row)`;
+                      if (state.value === undefined) return `${label}: (not selected)`;
+                      return `${label}: ${state.value}${state.value === id ? ' (this plugin)' : ''}`;
+                    };
+                    const taken = [selection.pending(), fetchSelection.pending()].filter(
+                      (value) => typeof value === 'string' && value !== '',
+                    );
+                    return (
+                      `Selection: ${describe('web.searchProvider', selectionState(), RUSTXNG_SEARCH_PROVIDER_ID)}, ` +
+                      `${describe('web.fetchProvider', fetchSelectionState(), RUSTXNG_FETCH_PROVIDER_ID)}` +
+                      (taken.length === 0 ? '' : ` — handed over this session: ${taken.join(', ')}`)
+                    );
+                  })(),
                   (() => {
                     const info = processManager.status();
                     const managed = info.managed ? `managed (pid ${info.pid})` : 'not managed by this plugin';

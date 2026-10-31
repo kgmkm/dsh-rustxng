@@ -198,7 +198,10 @@ RustXNG をサービスとして常駐させたくない場合は、プラグイ
 - DSH が強制終了された場合はそのクリーンアップが走らないため、**アイドルタイマー**が
   後始末をします。検索が無いまま `idleMinutes` 経過で停止し、次の検索で自動的に再起動します。
   到達性の定期チェックは「使用」に数えません。
-- `rustxng_status` に `Auto-start: on — managed (pid …), idle timeout 60 min (12 min idle)` と出ます。
+- `rustxng_status` に `Auto-start: on — managed (pid …), idle timeout 60 min (12 min idle)` と、
+  `Selection: web.searchProvider: rustxng (this plugin), web.fetchProvider: http` が出ます。
+- `rustxng_search` ツールも起動します（`web_search` を置き換えずツールだけ使う構成でも初回から動く）。
+  `rustxng_status` は起動しません（報告のみ）。
 
 サービス管理と併用する場合は `idleMinutes: 0` にしてください（両者は独立です）。
 
