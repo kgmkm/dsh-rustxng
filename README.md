@@ -23,18 +23,28 @@ API and the ordinary `web.searchProvider` settings field, so it survives Harness
 
 ## Do you need this plugin at all?
 
-RustXNG has its own integration for the **rdsh** CLI. Pick by what you want to replace:
+**If you use rustdsh (`rdsh`), let rustdsh handle search.** Since v0.15.0 it checks whether
+rustxng / `SEARXNG_URL` actually answers at start-up and, only when it does, passes
+`DSH_WEB_SEARCH_PROVIDER=rdsh-rustxng` to the delegated DSH so the bundled
+`rdsh-web-search-searxng` provider takes `web_search` over (`web_search_bridge`, on by
+default).
 
 | Your situation | Use |
 | :--- | :--- |
-| You only run **rdsh** and want `rdsh search-web` to use RustXNG | **RustXNG's own guide**: [`docs/RDSH.md`](https://github.com/sahenjp/RustXNG/blob/main/docs/RDSH.md) — `rdsh rustxng install`, then `rdsh search-web --engine rustxng "query"`. No plugin needed; it is configuration-free and starts its own sidecar. |
-| You use **DSH** and want the built-in **`web_search` replaced** | **This plugin.** rdsh's integration is a shell command for the rdsh CLI; it does not touch the Harness's `web_search`, so inside DSH it changes nothing. |
-| You need **`web_fetch` to stop garbling** pages whose charset is declared only in `<meta>` | **This plugin** (`webFetch.enabled`) — the rdsh path is search only. |
+| You start **DSH through rdsh** (`rdsh tui`, `rdsh web`, …) and want `web_search` to hit a local engine | **rustdsh's own bridge.** Nothing to configure; stop it with `rdsh features off web_search_bridge` |
+| You start **`dsh` directly** (desktop app, systemd, …) and want `web_search` replaced | **This plugin.** rdsh only injects into the children it launches, so a plain `dsh` boot is untouched |
+| You need **`web_fetch` to stop garbling** pages whose charset is declared only in `<meta>` | **This plugin** (`webFetch.enabled`) — rustdsh's bridge is search only |
 | You want the agent to call RustXNG **as a tool** (`rustxng_search` / `rustxng_status`) | **This plugin.** |
-| You use both and want **one instance for both** | This plugin for DSH, and point rdsh at it: `RUSTXNG_URL=http://127.0.0.1:8888 rdsh search-web --engine rustxng …` |
+| You want the binary **downloaded, started and idle-stopped** for you | **This plugin** (`autoStart`); rustdsh never downloads anything on behalf of the bridge |
+| You use both and want **one instance for both** | Point rdsh at this plugin's instance: `RUSTXNG_URL=http://127.0.0.1:8888` |
 
-In short: **replacing DSH's search is something only this plugin does**; if you do not need
-that and you drive RustXNG from rdsh, the upstream guide is the shorter path. See
+**Give search to exactly one of them.** With both, two providers are registered (`rustxng` and
+`rdsh-rustxng`) and two sidecars can end up running. Letting rustdsh own it means turning this
+plugin's `webSearch.enabled` off; letting this plugin own it means
+`rdsh features off web_search_bridge` (or `RDSH_WEB_SEARCH_BRIDGE=0`).
+
+**Delegating search to rustdsh does not change `web_fetch`.** Use this plugin's
+`webFetch.enabled` when you want the fetch side replaced too. See
 [If you also use rdsh](#if-you-also-use-rdsh) for sharing one instance and one binary.
 
 ---
@@ -272,15 +282,21 @@ run it first when a search fails.
 
 ## If you also use rdsh
 
-RustXNG ships its own integration for [`rdsh`](https://github.com/sahenjp/RustXNG/blob/main/docs/RDSH.md):
-`rdsh search-web --engine rustxng` needs no configuration (it looks at `SEARXNG_URL`,
-`RUSTXNG_URL`, a local `rustxng` command, then `127.0.0.1:8888`), and `rdsh rustxng install`
-puts a binary in `~/.local/bin`.
+rustdsh touches RustXNG in two places, and they are not the same thing:
 
-That path is **not a replacement for this plugin**: it is a shell command for the rdsh CLI,
-while this plugin plugs into the Harness's `web_search`/`web_fetch` seam and adds
-model-facing tools. Use whichever matches what you run — and if you run both, one instance
-serves both:
+- **`rdsh search-web --engine rustxng`** — a shell command for rdsh's own search
+  (`SEARXNG_URL` → `RUSTXNG_URL` → a local `rustxng` → `127.0.0.1:8888`);
+  `rdsh rustxng install` puts the binary in `~/.local/bin`.
+- **`web_search_bridge`** (v0.15.0+, on by default) — injects
+  `DSH_WEB_SEARCH_PROVIDER=rdsh-rustxng` into a DSH that rdsh launches, so the bundled
+  `rdsh-web-search-searxng` provider serves `web_search`. A plain `dsh` boot sees none of it.
+
+So search is already handled in a rustdsh-driven session: leave this plugin's
+`webSearch.enabled` off there. Turn it on — and stop the bridge with
+`rdsh features off web_search_bridge` — when you want the Harness-side replacement from a
+direct `dsh` start, the model-facing tools, or managed download/start/idle-stop.
+
+`web_fetch` is outside the bridge either way. If you run both, one instance can serve both:
 
 - point rdsh at the plugin's instance with `RUSTXNG_URL=http://127.0.0.1:8888`, or
 - let the plugin reuse rdsh's binary: the search order is `autoStart.binaryPath` →
@@ -295,7 +311,7 @@ Set `autoStart.binaryPath` when you have several builds and want a specific one.
 | :--- | :--- |
 | Windows 10/11 x64 | Verified: release binary + this plugin (search, provider replacement, settings card) on DSH 0.2.1-rc.2 |
 | Linux x64 (glibc / musl) | Verified on a standalone Ubuntu 26.04 server (DSH 0.2.0-rc.2: replacement + card) and on WSL2 (both release builds 12/12) |
-| macOS arm64 / x64 | Verified on macOS 26.6.2 / M1 Max with DSH 0.2.1-rc.3 (Electron desktop app): 0.1.3 answered ustxng_search in ~3 s across 6-10 engines; 0.2.1 adds first-run download and auto-start |
+| macOS arm64 / x64 | Verified on macOS 26.6.2 / M1 Max with DSH 0.2.1-rc.3 (Electron desktop app): 0.1.3 answered rustxng_search in ~3 s across 6-10 engines; 0.2.1 adds first-run download and auto-start |
 
 See [docs/PLATFORMS.md](docs/PLATFORMS.md) for how each platform is expected to be
 verified, binary placement, and the platform-specific notes (PATH, service managers, WSL,

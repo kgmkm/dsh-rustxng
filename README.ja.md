@@ -21,18 +21,27 @@ DSH 本体には一切パッチを当てていません。公開 API の `ctx.we
 
 ## このプラグインは必要か
 
-RustXNG 本体は **rdsh** CLI 向けの統合を用意しています。何を置き換えたいかで選んでください。
+**rustdsh（`rdsh`）を使っているなら、検索は rustdsh 側に任せるのが基本です。** rustdsh は
+v0.15.0 以降、起動時に rustxng / `SEARXNG_URL` が実際に応答するかを確かめ、応答するときだけ
+委譲先の DSH へ `DSH_WEB_SEARCH_PROVIDER=rdsh-rustxng` を渡して、同梱の
+`rdsh-web-search-searxng` に `web_search` を差し替えさせます（`web_search_bridge`、既定 ON）。
 
 | 状況 | 使うもの |
 | :--- | :--- |
-| **rdsh だけ**を使っていて、`rdsh search-web` を RustXNG にしたい | **RustXNG 本体の手順**: [`docs/RDSH.md`](https://github.com/sahenjp/RustXNG/blob/main/docs/RDSH.md) — `rdsh rustxng install` → `rdsh search-web --engine rustxng "query"`。**プラグインは不要**です（設定不要で、自分でサイドカーを起動します） |
-| **DSH** を使っていて、内蔵 **`web_search` を差し替えたい** | **このプラグイン**。rdsh の統合は rdsh CLI のシェルコマンドで、Harness の `web_search` には触れないため、DSH の中では何も変わりません |
-| **`web_fetch` の文字化け**（`<meta>` でしか charset を宣言しないページ）を直したい | **このプラグイン**（`webFetch.enabled`）。rdsh 側の統合は検索のみです |
+| **rdsh 経由で DSH を起動**していて（`rdsh tui` / `rdsh web` など）、`web_search` をローカル検索にしたい | **rustdsh 標準のブリッジ**。設定は不要です。止めるときは `rdsh features off web_search_bridge` |
+| **`dsh` を直接起動**していて（デスクトップアプリ・systemd など）、`web_search` を差し替えたい | **このプラグイン**。rdsh のブリッジは rdsh が起動した子プロセスにしか効かないため、素の `dsh` では何も変わりません |
+| **`web_fetch` の文字化け**（`<meta>` でしか charset を宣言しないページ）を直したい | **このプラグイン**（`webFetch.enabled`）。rustdsh のブリッジは検索のみです |
 | エージェントに **ツールとして**呼ばせたい（`rustxng_search` / `rustxng_status`） | **このプラグイン** |
-| 両方使い、**1 つのインスタンスを共有**したい | DSH 側はこのプラグイン、rdsh 側は `RUSTXNG_URL=http://127.0.0.1:8888 rdsh search-web --engine rustxng …` |
+| バイナリの**取得・起動・アイドル停止**まで任せたい | **このプラグイン**（`autoStart`）。rustdsh はブリッジのために勝手にダウンロードはしません |
+| rdsh と併用して**1 つのインスタンスを共有**したい | rdsh 側から `RUSTXNG_URL=http://127.0.0.1:8888` で本プラグインのインスタンスを指す |
 
-つまり **DSH の検索を置き換えられるのはこのプラグインだけ**です。それが不要で、RustXNG を
-rdsh から使うだけなら、上流の手順のほうが短く済みます。インスタンスとバイナリの共有方法は
+**検索の担当はどちらか一方にしてください。** 両方入れると provider が 2 つ（`rustxng` と
+`rdsh-rustxng`）登録され、サイドカーも二重に起動しえます。rustdsh 側に任せるなら本プラグインの
+`webSearch.enabled` を OFF に、本プラグインに任せるなら `rdsh features off web_search_bridge` に
+してください（`RDSH_WEB_SEARCH_BRIDGE=0` でも止まります）。
+
+**rustdsh に検索を任せても `web_fetch` は変わりません。** 取得側の差し替えが要るときだけ、この
+プラグインの `webFetch.enabled` を使ってください。インスタンスとバイナリの共有方法は
 [rdsh と併用する場合](#rdsh-と併用する場合) を参照してください。
 
 ---
@@ -258,22 +267,26 @@ RustXNG をサービスとして常駐させたくない場合は、プラグイ
 
 ## rdsh と併用する場合
 
-RustXNG 側は [`rdsh`](https://github.com/sahenjp/RustXNG/blob/main/docs/RDSH.md) 向けの統合を
-用意しています。`rdsh search-web --engine rustxng` は設定不要（`SEARXNG_URL` → `RUSTXNG_URL` →
-ローカルの `rustxng` → `127.0.0.1:8888` の順に探索）で、`rdsh rustxng install` が
-`~/.local/bin` にバイナリを入れます。
+rustdsh が RustXNG に触る場所は 2 つあり、これは別物です。
 
-**これは本プラグインの置き換えではありません。** rdsh 側は CLI のサブコマンドで、本プラグインは
-Harness の `web_search` / `web_fetch` シームに接続し、エージェント向けのツールも足します。
-使い分けの目安:
+- **`rdsh search-web --engine rustxng`** — rdsh 自身の検索のための CLI サブコマンド
+  （`SEARXNG_URL` → `RUSTXNG_URL` → ローカルの `rustxng` → `127.0.0.1:8888` の順に探索）。
+  `rdsh rustxng install` が `~/.local/bin` にバイナリを入れます
+- **`web_search_bridge`**（v0.15.0 以降、既定 ON）— rdsh が起動した DSH へ
+  `DSH_WEB_SEARCH_PROVIDER=rdsh-rustxng` を注入し、同梱の `rdsh-web-search-searxng` が
+  `web_search` を担当します。素の `dsh` 起動には一切効きません
 
-- **rdsh だけ使う** → RustXNG 側の統合で十分。本プラグインは不要です
-- **DSH（このプラグイン）を使う** → rdsh の統合は効かないので本プラグインが必要です
-- **両方使う** → 1 つのインスタンスを共有できます
-  - rdsh 側から `RUSTXNG_URL=http://127.0.0.1:8888` で本プラグインのインスタンスを指す
-  - プラグイン側は `autoStart.binaryPath` → `$DSH_HOME/bin` → `~/.local/bin` → `PATH` の順に
-    バイナリを探すため、rdsh が入れたものも再利用します。実際に使っているファイルは
-    `rustxng_status` の `Auto-start: … [rustxng]` 行で確認できます
+つまり **rdsh 経由で起動するセッションでは検索は済んでいる**ので、本プラグインの
+`webSearch.enabled` は OFF のままにしてください。ON にするのは、`dsh` を直接起動するときの
+Harness 側差し替え・エージェント向けツール・バイナリの取得と停止まで任せたいときで、そのときは
+`rdsh features off web_search_bridge` でブリッジを止めてください。
+
+`web_fetch` はどちらの場合もブリッジの対象外です。両方使うときは 1 つのインスタンスを共有できます。
+
+- rdsh 側から `RUSTXNG_URL=http://127.0.0.1:8888` で本プラグインのインスタンスを指す
+- プラグイン側は `autoStart.binaryPath` → `$DSH_HOME/bin` → `~/.local/bin` → `PATH` の順に
+  バイナリを探すため、rdsh が入れたものも再利用します。実際に使っているファイルは
+  `rustxng_status` の `Auto-start: … [rustxng]` 行で確認できます
 
 複数のビルドがあって特定のものを使いたい場合は `autoStart.binaryPath` を指定してください。
 
@@ -283,7 +296,7 @@ Harness の `web_search` / `web_fetch` シームに接続し、エージェン�
 | :--- | :--- |
 | Windows 10/11 x64 | 検証済み: リリースバイナリ＋本プラグイン（検索・差し替え・設定カード）を DSH 0.2.1-rc.2 で確認 |
 | Linux x64（glibc / musl） | 検証済み: 単体 Ubuntu 26.04 サーバ（DSH 0.2.0-rc.2 で差し替え・カード表示）、WSL2（両バイナリ 12/12） |
-| macOS arm64 / x64 | 検証済み: macOS 26.6.2 / M1 Max、DSH 0.2.1-rc.3（Electron デスクトップアプリ）。0.1.3 で ustxng_search が 6〜10 エンジン・約 3 秒で応答。0.2.1 で初回取得と自動起動に対応 |
+| macOS arm64 / x64 | 検証済み: macOS 26.6.2 / M1 Max、DSH 0.2.1-rc.3（Electron デスクトップアプリ）。0.1.3 で rustxng_search が 6〜10 エンジン・約 3 秒で応答。0.2.1 で初回取得と自動起動に対応 |
 
 検証手順・バイナリの置き場所・OS 毎の注意（PATH、サービス登録、WSL、musl）は
 [docs/PLATFORMS.md](docs/PLATFORMS.md) にまとめています。
