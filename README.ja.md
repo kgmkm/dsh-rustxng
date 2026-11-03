@@ -301,6 +301,14 @@ Harness 側差し替え・エージェント向けツール・バイナリの取
 検証手順・バイナリの置き場所・OS 毎の注意（PATH、サービス登録、WSL、musl）は
 [docs/PLATFORMS.md](docs/PLATFORMS.md) にまとめています。
 
+## 上流バージョンの扱い
+
+本プラグインは RustXNG の SearXNG 互換部分（`/healthz`、`/search?format=json`、`/config`、
+`--bind` / `--port` / `RUSTXNG_IDLE_TIMEOUT`）だけを使い、バージョン検査はしません。したがって
+上流のリリースは通常そのまま動きます。動かないときの判断基準——検証の 2 段階、`PINNED_VERSION`
+の意味、スモークを回す 5 つの変更——は [docs/UPSTREAM.md](docs/UPSTREAM.md) に、すでに対応した
+変更（既定ポートの 29483 移行、Google 系エンジンの削除）の記録とあわせて書いてあります。
+
 ## うまくいかないとき
 
 | 症状 | 対処 |

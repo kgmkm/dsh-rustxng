@@ -317,6 +317,15 @@ See [docs/PLATFORMS.md](docs/PLATFORMS.md) for how each platform is expected to 
 verified, binary placement, and the platform-specific notes (PATH, service managers, WSL,
 musl).
 
+## Upstream versions
+
+This plugin talks only to RustXNG's SearXNG-compatible surface (`/healthz`, `/search?format=json`,
+`/config`, `--bind`/`--port`/`RUSTXNG_IDLE_TIMEOUT`) and does not check a version, so a new
+upstream release is normally a no-op here. The rules for when it is not — the two verification
+tiers, what `PINNED_VERSION` means, and the five upstream changes that trigger a smoke run — are
+in [docs/UPSTREAM.md](docs/UPSTREAM.md), together with a log of the changes already handled
+(the default port moving to 29483, and the Google engine removals).
+
 ## Troubleshooting
 
 | Symptom | Fix |

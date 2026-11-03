@@ -18,6 +18,7 @@ import {
   createProcessManager,
   resolveBinary,
   shouldStopAfterIdle,
+  spawnEnv,
 } from '../lib/process-manager.js';
 
 let failures = 0;
@@ -48,7 +49,20 @@ await check('idle rule: no recorded activity means no timeout', () => {
   assert.equal(shouldStopAfterIdle({ lastUsedAt: 0, now: 10_000_000, idleMinutes: 60 }), false);
 });
 
-// --- 2. binary discovery --------------------------------------------------
+// --- 2. spawn environment -------------------------------------------------
+await check('spawn env repeats the port as SEARXNG_PORT', () => {
+  const env = spawnEnv({ port: 18899, env: { RUSTXNG_IDLE_TIMEOUT: '60' }, base: { PATH: '/bin' } });
+  assert.equal(env.SEARXNG_PORT, '18899');
+  assert.equal(env.RUSTXNG_IDLE_TIMEOUT, '60');
+  assert.equal(env.PATH, '/bin');
+});
+
+await check('an inherited SEARXNG_PORT cannot redirect the child', () => {
+  const env = spawnEnv({ port: 18899, env: { SEARXNG_PORT: '8888' }, base: { SEARXNG_PORT: '29483' } });
+  assert.equal(env.SEARXNG_PORT, '18899');
+});
+
+// --- 3. binary discovery --------------------------------------------------
 await check('binary name follows the platform', () => {
   assert.equal(binaryName('win32'), 'rustxng.exe');
   assert.equal(binaryName('linux'), 'rustxng');
@@ -100,6 +114,7 @@ const http = require('node:http');
 const args = process.argv.slice(2);
 const portIndex = args.indexOf('--port');
 const port = Number(args[portIndex + 1] ?? 0);
+if (process.env.SEARXNG_PORT !== String(port)) process.exit(3);
 http.createServer((request, response) => {
   if (request.url === '/healthz') { response.writeHead(200); response.end('OK'); return; }
   response.writeHead(404); response.end();
