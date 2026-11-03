@@ -4,8 +4,9 @@
 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) から使うためのプラグインです。
 内蔵の **`web_search`** を RustXNG が答えるように差し替えられます。
 
-RustXNG は Rust 製の SearXNG 互換メタ検索エンジンで、1 回の検索が約 170 の検索サイトへ
-fan-out し、重複を除いて結果を返します。広告も追跡もありません。このプラグインは、
+RustXNG は Rust 製の SearXNG 互換メタ検索エンジンで、1 回の検索が約 160 の検索サイトへ
+fan-out し、重複を除いて結果を返します（エンジン数は版ごとに動きます。正確な数は
+`rustxng_status` が返します）。広告も追跡もありません。このプラグインは、
 自分で動かしている RustXNG（Windows / macOS / Linux）と DSH をつなぎ、次の 4 つを追加します。
 
 | 追加されるもの | 内容 |
@@ -320,6 +321,8 @@ Harness 側差し替え・エージェント向けツール・バイナリの取
 | 日本語ページが `����` や `�N` になる | 取得先が `<meta>` でしか文字コードを宣言していません。`webFetch.enabled` をオンにするか（[任意: 文字コード対応のページ取得](#任意-文字コード対応のページ取得)）、`curl … \| iconv -f SHIFT_JIS -t UTF-8` で読んでください。 |
 | DSH を閉じたのに rustxng が残る | `autoStart.idleMinutes`（既定 60 分）で自動停止します。すぐ止めたい場合は値を小さくするか、`rustxng_status` で managed かどうかを確認してください。`0` にすると停止しません。 |
 | 結果が少ない | 一部エンジンは IP 単位でレート制限されます。`rustxng_status` や RustXNG の `/stats` で停止中のエンジンを確認。`!engine query` は依然使えます。 |
+| ログに `skipped engine=google … unknown engine type` が出る | RustXNG 0.27 で Google 系エンジンが削除され、古い `settings.toml` にその項目が残っています。残り約 160 エンジンで起動は続くので、その `[[engines]]` ブロックを消してください。 |
+| 手動起動したのに 8888 で応答せず 29483 で待っている | RustXNG 0.27 以降の既定は 29483 です。`--port 8888` を付けるか、接続先 URL を `http://127.0.0.1:29483` にしてください。プラグインが起動する場合は `--port` を明示するので影響ありません。 |
 
 ## 開発
 

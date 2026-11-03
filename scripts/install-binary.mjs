@@ -62,7 +62,9 @@ async function main() {
     [
       '',
       'Next steps:',
-      `  1. start it:  "${result.path}" --port 8888`,
+      `  1. start it:  "${result.path}" --bind 127.0.0.1 --port 8888`,
+      '     (8888 is this plugin\'s default baseUrl; RustXNG 0.27+ would otherwise listen on 29483)',
+      '     for a search-only setup the plugin can start and stop it for you instead — step 3',
       '  2. in DSH, open Plugins → RustXNG and switch on "Use RustXNG for web_search"',
       '     (or set baseUrl if you run it on another port/host)',
       '  3. or let the plugin do both: switch on "Start RustXNG automatically"',

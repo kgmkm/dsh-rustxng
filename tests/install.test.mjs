@@ -12,7 +12,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { PINNED_VERSION, assetName, installBinary, resolveTarget } from '../lib/install-binary.js';
+import { PINNED_VERSION, assetName, installBinary, resolveTag, resolveTarget } from '../lib/install-binary.js';
 
 let failures = 0;
 const check = async (name, fn) => {
@@ -29,12 +29,26 @@ const payload = Buffer.from('#!/bin/sh\necho fake rustxng\n');
 const digest = createHash('sha256').update(payload).digest('hex');
 
 /** Build a fetch stub; `overrides` can break individual endpoints. */
-function stubFetch({ checksum = digest, apiFails = false, tag = 'v0.4.1', calls = [] } = {}) {
+function stubFetch({ checksum = digest, apiFails = false, tag = 'v0.4.1', calls = [], redirectTag } = {}) {
   return async (url) => {
     calls.push(String(url));
     if (String(url).includes('api.github.com')) {
       if (apiFails) return { ok: false, status: 403, json: async () => ({}) };
       return { ok: true, status: 200, json: async () => ({ tag_name: tag }), text: async () => '' };
+    }
+    if (String(url).endsWith('/releases/latest')) {
+      // The HTML redirect: 302 plus a Location that names the tag.
+      if (redirectTag === undefined) return { ok: false, status: 404, headers: { get: () => null } };
+      return {
+        ok: false,
+        status: 302,
+        headers: {
+          get: (name) =>
+            String(name).toLowerCase() === 'location'
+              ? `https://github.com/sahenjp/RustXNG/releases/tag/${redirectTag}`
+              : null,
+        },
+      };
     }
     if (String(url).endsWith('.sha256')) {
       return { ok: true, status: 200, text: async () => `${checksum}  asset\n` };
@@ -127,13 +141,33 @@ try {
     log: () => {},
   });
 
-  await check('falls back to the pinned version when the API is unavailable', () => {
+  await check('falls back to the pinned version when the API and the redirect both fail', () => {
     assert.equal(offline.ok, true, JSON.stringify(offline));
     assert.equal(offline.tag, `v${PINNED_VERSION}`);
     assert.ok(
       offlineCalls.some((url) => url.includes(`/releases/download/v${PINNED_VERSION}/`)),
       offlineCalls.join('\n'),
     );
+    assert.ok(
+      offlineCalls.some((url) => url.endsWith('/releases/latest')),
+      `expected the redirect to be tried before pinning:\n${offlineCalls.join('\n')}`,
+    );
+  });
+
+  await check('names the tag from the releases/latest redirect when the API is rate limited', async () => {
+    const resolved = await resolveTag({ fetchImpl: stubFetch({ apiFails: true, redirectTag: 'v0.27.1' }) });
+    assert.deepEqual(resolved, { tag: 'v0.27.1', source: 'redirect' });
+  });
+
+  await check('refuses a redirect that does not name a tag', async () => {
+    const resolved = await resolveTag({
+      fetchImpl: async (url) =>
+        String(url).includes('api.github.com')
+          ? { ok: false, status: 403, json: async () => ({}) }
+          : { ok: false, status: 302, headers: { get: () => 'https://github.com/sahenjp/RustXNG/releases' } },
+    });
+    assert.equal(resolved.source, 'pinned');
+    assert.equal(resolved.tag, `v${PINNED_VERSION}`);
   });
 
   const explicit = await installBinary({

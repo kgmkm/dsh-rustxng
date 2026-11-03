@@ -45,25 +45,35 @@ which is what keeps upstream engine changes from reaching this code.
 | Upstream | Change | Effect here | Action |
 | :--- | :--- | :--- | :--- |
 | v0.26.0 (2026-11-01) | Docker image, README restructure | none | none |
-| unreleased | Default HTTP port **8888 → 29483** | managed starts already pass `--port`; a hand-started instance is the case that drifts | 0.5.3 sets `SEARXNG_PORT` alongside `--port`, so old and new builds agree with `baseUrl` |
-| unreleased | **Google engines, Google front ends, YouTube, Google translate, Material Icons, autocomplete and related bangs removed** | no engine enumeration, so no code impact; an old `settings.toml` that lists those engines has to be edited by its owner | start-failure hint (planned, see below) |
-| unreleased | Yahoo! JAPAN and Mojeek HTML adapters disabled by default | Japanese result mix changes | recorded in [PLATFORMS.md](PLATFORMS.md) notes |
-| unreleased | Linux ARM64 release binary | `resolveTarget()` only maps x64 and Apple arm64 | evaluate if anyone asks for ARM64 Linux |
-| unreleased | `--check-update` / `--update`, CA bundle support | none (we never invoke them) | none |
-
-The "unreleased" rows are in upstream `main` as of 2026-11-03. Installing `latest` still brings
-v0.26.0, which keeps the old defaults.
+| v0.27.0 / v0.27.1 (2026-11-03) | Default HTTP port **8888 → 29483** | managed starts already pass `--port`; a hand-started instance was the case that drifts | 0.5.3 sets `SEARXNG_PORT` alongside `--port`; measured OK on 0.27.1 (see [PLATFORMS.md](PLATFORMS.md#upstream-0271-contract-smoke-2026-11-03-windows-x64)) |
+| v0.27.0 / v0.27.1 | **Google engines, Google front ends, YouTube, Google translate, Material Icons, autocomplete and related bangs removed** (169 → 160 engines) | no engine enumeration, so no code impact; a legacy `settings.toml` entry only logs `WARN … skipped engine=google … unknown engine type` and the instance still starts | 0.5.4 documents the warning in the README and corrects the engine counts; nothing to fix in code |
+| v0.27.0 | Yahoo! JAPAN and Mojeek HTML adapters disabled by default | Japanese result mix changes | recorded in the platform notes |
+| v0.27.0 | Linux ARM64 release binary | `resolveTarget()` still maps only x64 and Apple arm64 | evaluate if anyone asks for ARM64 Linux |
+| v0.27.0 | `--check-update` / `--update`, CA bundle support | none (we never invoke them) | none |
+| 2026-11-03 (field finding) | `api.github.com` answered **HTTP 403** (unauthenticated rate limit) on the test machine, so the download fell through to `PINNED_VERSION` and installed a 2025-era binary | the plugin silently installed a much older instance | 0.5.4 resolves the tag through the `/releases/latest` redirect as well, which carries no API quota, and moves the pin to v0.27.1 |
 
 ## Pending work
 
 - **0.5.3 (done):** duplicate the port as `SEARXNG_PORT`; this page.
-- **After the release that carries the removals:** replace the "about 170 engines" wording with
-  a range and make `rustxng_status` the source of truth, and add a start-failure hint telling
-  the reader to delete removed Google entries from `settings.toml`.
-- **Same release:** bump `PINNED_VERSION` to the first tag verified with the new defaults
-  (v0.4.1 today; its assets still exist, but it is old enough that the fallback should move).
+- **0.5.4 (done):** engine counts corrected to the measured 160; the legacy-engine warning and the
+  29483 default documented in the README; `PINNED_VERSION` moved to 0.27.1; the redirect fallback
+  added after the API refused the lookup on a rate-limited IP.
+- **Open:** decide whether Linux ARM64 belongs in `resolveTarget()`. Upstream publishes the asset;
+  this plugin has no report from an ARM64 Linux machine, so the mapping stays out until one
+  arrives rather than shipping an untested path.
 
 ## Running the contract smoke by hand
+
+```bash
+node scripts/contract-smoke.mjs                    # download the latest release, then check it
+node scripts/contract-smoke.mjs --binary ./rustxng --port 29511
+```
+
+The script starts the instance through this plugin's own supervisor, so the managed start path
+(`--bind`/`--port` plus `SEARXNG_PORT`) is covered, and it stops the child before exiting. It
+exits non-zero on any failed check, which makes it usable as a release gate.
+
+The same checks as bare commands, when you want to watch the instance yourself:
 
 ```bash
 "/path/to/rustxng" --bind 127.0.0.1 --port 29483 &

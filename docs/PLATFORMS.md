@@ -17,6 +17,23 @@ asset + code path exist, verification checklist below not yet executed.
 | Tools (`rustxng_search` / `rustxng_status`) | verified | verified (0.4.0: tool triggers auto-start) | verified (0.4.0: all 8 checks) |
 | Auto-start / download / idle stop | verified (0.2.0–0.3.0) | verified (0.2.2 → 0.4.0) | verified (0.4.0: start, 70 s idle stop, restart) |
 
+### Upstream 0.27.1 contract smoke (2026-11-03, Windows x64)
+
+Run through the plugin's own supervisor (`createProcessManager`) on port 29511, with
+`rustxng-v0.27.1-x86_64-pc-windows-msvc.exe` fetched by `scripts/install-binary.mjs`:
+
+| Check | Result |
+| :--- | :--- |
+| `/healthz` | `OK` |
+| engines | **160 configured / 160 enabled** — the Google family is gone; `yahoo` remains, no `youtube` / `startpage` |
+| `/search?format=json` | 200, 188 rows, `url` / `title` / `content` / `engine` / `engines` present, `unresponsive_engines` populated |
+| managed start | OK with `--port 29511` **and** `SEARXNG_PORT=29511`; the child was stopped by `stop()` |
+| a legacy `settings.toml` with a `google` engine | starts anyway: `WARN … skipped engine=google error=… unknown engine type "google"`, `engines=160` |
+
+The release API answered **HTTP 403** (unauthenticated rate limit) on this IP during the run,
+which is why 0.5.4 resolves the tag through the `/releases/latest` redirect as well. Passing
+`--version 0.27.1` explicitly downloaded the expected asset.
+
 ### Linux verification run
 
 **0.5.0 (2026-10-31, Windows):** the spawned instance is now given `RUSTXNG_IDLE_TIMEOUT`, so

@@ -5,8 +5,9 @@ Use a self-hosted [RustXNG](https://github.com/sahenjp/RustXNG) instance from
 built-in **`web_search`** with it.
 
 RustXNG is a SearXNG-compatible metasearch engine written in Rust: one query fans out to
-about 170 search engines, deduplicates the results and returns them without ads or
-tracking. This plugin connects DSH to a RustXNG you run yourself (Windows, macOS or Linux)
+about 160 search engines, deduplicates the results and returns them without ads or
+tracking (the count moves between releases; `rustxng_status` reports the live one). This
+plugin connects DSH to a RustXNG you run yourself (Windows, macOS or Linux)
 and adds:
 
 | Contribution | What it gives you |
@@ -336,6 +337,8 @@ in [docs/UPSTREAM.md](docs/UPSTREAM.md), together with a log of the changes alre
 | `rustxng_status` says `Replace web_search: no (default)` although it is on | Fixed in 0.1.2 (live config values were compared as primitives). |
 | `Wanted to register a provider but web is missing` | The profile has no `@deepseek-ai/dsh-web`; this plugin needs it for the replacement (the tools still work). |
 | Results look thin | A few engines rate-limit per IP; `rustxng_status` / RustXNG's `/stats` show which are suspended. `!engine query` still works. |
+| The log says `skipped engine=google … unknown engine type` | RustXNG 0.27 removed the Google engines, and an older `settings.toml` still lists them. Start-up continues with the remaining ~160 engines; delete those `[[engines]]` blocks when convenient. |
+| A hand-started binary answers on 29483, not 8888 | RustXNG 0.27+ defaults to 29483. Start it with `--port 8888` to match this plugin's default `baseUrl`, or set `baseUrl` to `http://127.0.0.1:29483`. Managed starts are unaffected — the plugin passes `--port` itself. |
 | A Japanese page comes back as `����` / `�N` | The site declares its encoding only in `<meta>`. Turn on `webFetch.enabled` (see [Optional: charset-aware fetch](#optional-charset-aware-fetch)), or read it with `curl … \| iconv -f SHIFT_JIS -t UTF-8`. |
 
 ## Development
@@ -348,6 +351,7 @@ node tests/tools.test.mjs       # the search tool triggers auto-start; status st
 node tests/install.test.mjs     # release asset naming, SHA-256 verification, the pinned fallback
 node tests/process.test.mjs     # idle rule, binary discovery, a real start/health/idle-stop cycle
 node tests/signal.test.mjs      # SIGTERM takes the child with it (POSIX; skips on Windows)
+node scripts/contract-smoke.mjs # the four upstream surfaces against a release (see docs/UPSTREAM.md)
 ```
 
 `apply.test.mjs` and `resolve.test.mjs` need no running instance and no network.
