@@ -51,6 +51,9 @@ which is what keeps upstream engine changes from reaching this code.
 | v0.27.0 | Linux ARM64 release binary | `resolveTarget()` still maps only x64 and Apple arm64 | evaluate if anyone asks for ARM64 Linux |
 | v0.27.0 | `--check-update` / `--update`, CA bundle support | none (we never invoke them) | none |
 | 2026-11-03 (field finding) | `api.github.com` answered **HTTP 403** (unauthenticated rate limit) on the test machine, so the download fell through to `PINNED_VERSION` and installed a 2025-era binary | the plugin silently installed a much older instance | 0.5.4 resolves the tag through the `/releases/latest` redirect as well, which carries no API quota, and moves the pin to v0.27.1 |
+| v0.28.0 (2026-11-04) | Profiles: `--profile standard` / `full` / `clean` (env `RUSTXNG_PROFILE`); CAPTCHA-returning, access-denying and always-failing engines now default-off; Wikimedia sisters leave general search | `standard` is the default and went from 160 to **119 engines**; the spawned child inherits your environment, so `RUSTXNG_PROFILE` reaches it — this plugin never passes `--profile` | 0.5.5 replaces the count with "over a hundred", documents the inheritance, and re-measures in the smoke |
+| v0.28.0 | Opt-in **DeepSeek search and fetch backends**: a `deepseek` engine and `[fetch] provider = "deepseek"` | the defaults stay local (`direct`, engine disabled) and both need `DEEPSEEK_API_KEY`; once enabled, queries or page URLs leave the host, which conflicts with this README's "no tracking" line | 0.5.5 states that the claim covers the default configuration only; no code change |
+| v0.28.0 | PDF and JavaScript page reading, `read_page` / `include_raw_content` honour robots.txt | **no HTTP endpoint for reading**: the routes are `/search`, `/config`, `/stats`, `/metrics`, `/research`, `/healthz` and a few UI paths, so `read_page` is MCP-only | the charset-aware `web_fetch` here stays independent; recorded so this is not re-investigated |
 
 ## Pending work
 
@@ -58,6 +61,9 @@ which is what keeps upstream engine changes from reaching this code.
 - **0.5.4 (done):** engine counts corrected to the measured 160; the legacy-engine warning and the
   29483 default documented in the README; `PINNED_VERSION` moved to 0.27.1; the redirect fallback
   added after the API refused the lookup on a rate-limited IP.
+- **0.5.5 (done):** 0.28.0 smoke (119 engines, no Google family, 89 clean rows); counts made
+  version-proof ("over a hundred"); `RUSTXNG_PROFILE` inheritance and the DeepSeek opt-in
+  documented; pin moved to 0.28.0.
 - **Open:** decide whether Linux ARM64 belongs in `resolveTarget()`. Upstream publishes the asset;
   this plugin has no report from an ARM64 Linux machine, so the mapping stays out until one
   arrives rather than shipping an untested path.
@@ -67,6 +73,7 @@ which is what keeps upstream engine changes from reaching this code.
 ```bash
 node scripts/contract-smoke.mjs                    # download the latest release, then check it
 node scripts/contract-smoke.mjs --binary ./rustxng --port 29511
+node scripts/contract-smoke.mjs --version 0.28.0 --force   # re-download a cached copy
 ```
 
 The script starts the instance through this plugin's own supervisor, so the managed start path

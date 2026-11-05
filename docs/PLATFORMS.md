@@ -34,6 +34,25 @@ The release API answered **HTTP 403** (unauthenticated rate limit) on this IP du
 which is why 0.5.4 resolves the tag through the `/releases/latest` redirect as well. Passing
 `--version 0.27.1` explicitly downloaded the expected asset.
 
+### Upstream 0.28.0 contract smoke (2026-11-05, Windows x64)
+
+Same script, this time downloading the latest release itself (`node scripts/contract-smoke.mjs`),
+which also exercised the redirect path end to end — the API answered 200 this time:
+
+| Check | Result |
+| :--- | :--- |
+| `/healthz` | `OK` |
+| engines | **119 configured / 119 enabled** — the `standard` profile stops enabling engines that answer with CAPTCHA, refuse access, or always fail |
+| `/search?format=json` | 200, **89 rows**, `url` / `title` / `content` / `engine` / `engines` present |
+| `unresponsive_engines` | `[]` — with the failing engines disabled by default, the result set is cleaner than 0.27's (which listed andisearch, bing, brave, dogpile) |
+| managed start | OK on port 29531 with `--port` + `SEARXNG_PORT`; the child stopped on request |
+
+Environment inheritance was confirmed separately: 0.28 accepts `RUSTXNG_PROFILE` and a bare
+`--profile`, and because `spawnEnv()` passes the parent environment through, setting the variable
+reaches a managed instance. With `RUSTXNG_PROFILE=clean` the same script reported **23 engines**
+and 11 rows, so the variable really does reach the child. The plugin itself never passes
+`--profile`, so `standard` stays the default.
+
 ### Linux verification run
 
 **0.5.0 (2026-10-31, Windows):** the spawned instance is now given `RUSTXNG_IDLE_TIMEOUT`, so

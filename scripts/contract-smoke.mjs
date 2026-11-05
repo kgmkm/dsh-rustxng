@@ -3,8 +3,10 @@
  * Contract smoke for an upstream RustXNG release (policy: docs/UPSTREAM.md).
  *
  *   node scripts/contract-smoke.mjs                      # download the latest release first
+ *   node scripts/contract-smoke.mjs --version 0.28.0     # a specific release
  *   node scripts/contract-smoke.mjs --binary ./rustxng   # use an existing binary
  *   node scripts/contract-smoke.mjs --port 29511 --json
+ *   node scripts/contract-smoke.mjs --force              # re-download over a cached copy
  *
  * The instance is started through the plugin's own supervisor, so the managed start path
  * (`--bind`/`--port` plus `SEARXNG_PORT`) is part of what is being checked, and the child is
@@ -36,13 +38,21 @@ function record(name, ok, detail) {
 let binary = flag('binary', undefined);
 if (binary === undefined) {
   const dir = join(tmpdir(), 'dsh-rustxng-contract-smoke');
-  const installed = await installBinary({ dir, log: (line) => console.log(line) });
+  const installed = await installBinary({
+    dir,
+    version: flag('version', undefined),
+    force: argv.includes('--force'),
+    log: (line) => console.log(line),
+  });
   if (installed.ok !== true) {
     console.log(`could not obtain a binary: ${installed.reason ?? 'unknown'}`);
     process.exit(2);
   }
   binary = installed.path;
-  record('downloaded the release', true, `${installed.tag} (${installed.source ?? 'unknown'})`);
+  const label = installed.tag === undefined
+    ? `${installed.reason ?? 'existing file'} (pass --force to re-download)`
+    : `${installed.tag} (${installed.source ?? 'unknown'})`;
+  record('binary ready', true, label);
 }
 
 const manager = createProcessManager({

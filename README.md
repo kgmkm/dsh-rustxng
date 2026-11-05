@@ -5,8 +5,8 @@ Use a self-hosted [RustXNG](https://github.com/sahenjp/RustXNG) instance from
 built-in **`web_search`** with it.
 
 RustXNG is a SearXNG-compatible metasearch engine written in Rust: one query fans out to
-about 160 search engines, deduplicates the results and returns them without ads or
-tracking (the count moves between releases; `rustxng_status` reports the live one). This
+over a hundred search engines (119 enabled in 0.28's default `standard` profile),
+deduplicates the results and returns them without ads or tracking. This
 plugin connects DSH to a RustXNG you run yourself (Windows, macOS or Linux)
 and adds:
 
@@ -246,10 +246,18 @@ Behaviour:
 - The `rustxng_search` tool starts the instance too, so a tool-only setup (no replacement of
   `web_search`) also works from the first call. `rustxng_status` never starts it — it only
   reports.
-- **Which version is downloaded:** always the latest release. `PINNED_VERSION` in
-  `lib/install-binary.js` is only the offline fallback used when GitHub's API cannot be
-  reached, and it is deliberately an older known-good build. Set `autoStart.version` when you
-  want a reproducible version instead.
+- **Which version is downloaded:** always the latest release. The tag is resolved through
+  GitHub's release API and, when that is rate-limited, through the `/releases/latest` redirect;
+  `PINNED_VERSION` in `lib/install-binary.js` is only the offline fallback, and it holds the last
+  release this plugin was verified against. Set `autoStart.version` for a reproducible version.
+- **The environment is inherited:** the child sees your environment, so `RUSTXNG_PROFILE`
+  (`standard` / `full` / `clean`, 0.28+) and `SEARXNG_SETTINGS_PATH` also apply to a managed
+  instance. This plugin passes no `--profile`, so the default stays `standard`.
+- **What leaves the machine:** with the defaults, RustXNG asks the engines directly from your
+  host and needs no API key. 0.28 adds opt-in DeepSeek backends (a `deepseek` search engine and
+  `[fetch] provider = "deepseek"`), both off by default and requiring `DEEPSEEK_API_KEY`; once
+  enabled, queries (search) or page URLs (fetch) are sent to DeepSeek, so the "no tracking" line
+  above describes the default configuration only.
 - **How it stops:** four paths, because none of them covers everything.
   1. the plugin's disposer, when DSH unloads the plugin;
   2. `process.on('exit')`, for a normal exit;
@@ -337,7 +345,7 @@ in [docs/UPSTREAM.md](docs/UPSTREAM.md), together with a log of the changes alre
 | `rustxng_status` says `Replace web_search: no (default)` although it is on | Fixed in 0.1.2 (live config values were compared as primitives). |
 | `Wanted to register a provider but web is missing` | The profile has no `@deepseek-ai/dsh-web`; this plugin needs it for the replacement (the tools still work). |
 | Results look thin | A few engines rate-limit per IP; `rustxng_status` / RustXNG's `/stats` show which are suspended. `!engine query` still works. |
-| The log says `skipped engine=google … unknown engine type` | RustXNG 0.27 removed the Google engines, and an older `settings.toml` still lists them. Start-up continues with the remaining ~160 engines; delete those `[[engines]]` blocks when convenient. |
+| The log says `skipped engine=google … unknown engine type` | RustXNG 0.27 removed the Google engines, and an older `settings.toml` still lists them. Start-up continues with the remaining engines; delete those `[[engines]]` blocks when convenient. |
 | A hand-started binary answers on 29483, not 8888 | RustXNG 0.27+ defaults to 29483. Start it with `--port 8888` to match this plugin's default `baseUrl`, or set `baseUrl` to `http://127.0.0.1:29483`. Managed starts are unaffected — the plugin passes `--port` itself. |
 | A Japanese page comes back as `����` / `�N` | The site declares its encoding only in `<meta>`. Turn on `webFetch.enabled` (see [Optional: charset-aware fetch](#optional-charset-aware-fetch)), or read it with `curl … \| iconv -f SHIFT_JIS -t UTF-8`. |
 
